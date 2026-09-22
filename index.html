@@ -1,0 +1,1937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clause → Compiler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  color-scheme: light;
+  --ground:#f3f6f4; --panel:#ffffff; --panel-2:#eaf0ed; --sunk:#e3eae6;
+  --ink:#101c19; --ink-2:#485853; --ink-3:#7c8b86;
+  --rule:#d6e0db; --rule-2:#c1cfc9;
+  --accent:#0a6355; --accent-2:#0c8874; --accent-soft:#d7ebe6; --accent-ink:#064a40; --on-accent:#ffffff;
+  --danger:#b93325; --danger-soft:#fbe3e0;
+  --warn:#9a6a00; --warn-soft:#fbeecb;
+  --ok:#1d6b3f; --ok-soft:#dcefe2;
+  --hl-mandatory:#ffe7a0; --hl-mandatory-edge:#cf9f00;
+  --hl-conditional:#ffd7ae; --hl-conditional-edge:#cd7719;
+  --hl-recommended:#c6dcf6; --hl-recommended-edge:#2b6cb0;
+  --hl-prohibited:#ffc9c3; --hl-prohibited-edge:#bd382c;
+  --hl-informational:#e0e7e3; --hl-informational-edge:#8a9a95;
+  --hl-optional:#dcebd7; --hl-optional-edge:#5c8a4b;
+  --hl-unclear:#e7dcf8; --hl-unclear-edge:#7a5bb5;
+  --shadow:0 1px 2px rgba(16,28,25,.06), 0 6px 20px -12px rgba(16,28,25,.28);
+  --sans:"Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif:"Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --ground:#0d1614; --panel:#14201d; --panel-2:#1a2723; --sunk:#0f1a17;
+    --ink:#e3ebe8; --ink-2:#9db0aa; --ink-3:#6f827d;
+    --rule:#243330; --rule-2:#31433f;
+    --accent:#3dbda4; --accent-2:#5bd4bb; --accent-soft:#0f2f2a; --accent-ink:#8ee6d3; --on-accent:#05221d;
+    --danger:#f08579; --danger-soft:#331814;
+    --warn:#e0b45c; --warn-soft:#2e2412;
+    --ok:#6cc48c; --ok-soft:#12291c;
+    --hl-mandatory:rgba(224,178,20,.26); --hl-mandatory-edge:#d7a92a;
+    --hl-conditional:rgba(214,120,30,.28); --hl-conditional-edge:#e08b3c;
+    --hl-recommended:rgba(56,124,196,.30); --hl-recommended-edge:#6aa6de;
+    --hl-prohibited:rgba(200,60,48,.30); --hl-prohibited-edge:#e4796c;
+    --hl-informational:rgba(140,160,154,.22); --hl-informational-edge:#8ba09a;
+    --hl-optional:rgba(96,150,80,.26); --hl-optional-edge:#7fb96a;
+    --hl-unclear:rgba(130,95,200,.30); --hl-unclear-edge:#a98ae0;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -14px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --ground:#0d1614; --panel:#14201d; --panel-2:#1a2723; --sunk:#0f1a17;
+  --ink:#e3ebe8; --ink-2:#9db0aa; --ink-3:#6f827d;
+  --rule:#243330; --rule-2:#31433f;
+  --accent:#3dbda4; --accent-2:#5bd4bb; --accent-soft:#0f2f2a; --accent-ink:#8ee6d3; --on-accent:#05221d;
+  --danger:#f08579; --danger-soft:#331814;
+  --warn:#e0b45c; --warn-soft:#2e2412;
+  --ok:#6cc48c; --ok-soft:#12291c;
+  --hl-mandatory:rgba(224,178,20,.26); --hl-mandatory-edge:#d7a92a;
+  --hl-conditional:rgba(214,120,30,.28); --hl-conditional-edge:#e08b3c;
+  --hl-recommended:rgba(56,124,196,.30); --hl-recommended-edge:#6aa6de;
+  --hl-prohibited:rgba(200,60,48,.30); --hl-prohibited-edge:#e4796c;
+  --hl-informational:rgba(140,160,154,.22); --hl-informational-edge:#8ba09a;
+  --hl-optional:rgba(96,150,80,.26); --hl-optional-edge:#7fb96a;
+  --hl-unclear:rgba(130,95,200,.30); --hl-unclear-edge:#a98ae0;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -14px rgba(0,0,0,.8);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:13.5px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+img{max-width:100%}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--accent-2); outline-offset:2px; border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+
+.appbar{
+  flex:0 0 auto; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:10px 16px; padding-top:calc(10px + env(safe-area-inset-top,0px));
+  background:var(--panel); border-bottom:1px solid var(--rule);
+}
+.brand{display:flex; align-items:baseline; gap:9px; min-width:0}
+.brand b{font-weight:700; letter-spacing:-.015em; font-size:14.5px; white-space:nowrap}
+.brand span{font-family:var(--mono); font-size:10.5px; color:var(--ink-3); letter-spacing:.02em; white-space:nowrap}
+.projchips{display:flex; gap:6px; flex-wrap:wrap; min-width:0; flex:1}
+.pchip{
+  display:inline-flex; align-items:baseline; gap:6px; padding:3px 8px;
+  background:var(--sunk); border:1px solid var(--rule); border-radius:4px; max-width:100%;
+}
+.pchip i{font-style:normal; font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:600}
+.pchip b{font-weight:500; font-family:var(--mono); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.appbar .acts{display:flex; gap:7px; align-items:center; flex-wrap:wrap}
+
+.btn{
+  display:inline-flex; align-items:center; gap:6px; padding:5px 11px;
+  background:var(--panel); color:var(--ink); border:1px solid var(--rule-2);
+  border-radius:5px; cursor:pointer; font-size:12.5px; font-weight:500; white-space:nowrap;
+  transition:background .12s, border-color .12s;
+}
+.btn:hover:not(:disabled){background:var(--panel-2); border-color:var(--ink-3)}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--on-accent)}
+.btn.primary:hover:not(:disabled){background:var(--accent-2); border-color:var(--accent-2)}
+.btn.sm{padding:3px 8px; font-size:11.5px}
+.btn.ok{color:var(--ok); border-color:var(--ok)}
+.btn.no{color:var(--danger); border-color:var(--danger)}
+.btn.ghost{background:transparent; border-color:transparent; color:var(--ink-2)}
+.btn.ghost:hover:not(:disabled){background:var(--panel-2); color:var(--ink)}
+
+.toolbar{
+  flex:0 0 auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:8px 16px; background:var(--panel-2); border-bottom:1px solid var(--rule);
+}
+.doctabs{display:flex; gap:4px; flex-wrap:wrap}
+.doctab{
+  display:flex; flex-direction:column; align-items:flex-start; gap:1px;
+  padding:4px 10px; border:1px solid var(--rule-2); border-radius:5px;
+  background:var(--panel); cursor:pointer; text-align:left;
+}
+.doctab[aria-pressed="true"]{border-color:var(--accent); background:var(--accent-soft)}
+.doctab b{font-size:11.5px; font-weight:600; white-space:nowrap}
+.doctab span{font-family:var(--mono); font-size:9.5px; color:var(--ink-3); white-space:nowrap}
+.tier{display:inline-block; font-family:var(--mono); font-size:9px; padding:0 3px; border:1px solid var(--rule-2); border-radius:2px; margin-right:4px; color:var(--ink-3)}
+.demo{display:inline-block; font-family:var(--mono); font-size:8.5px; padding:0 4px; border:1px solid var(--hl-recommended-edge); background:var(--hl-recommended); border-radius:2px; margin-left:4px}
+
+.filters{display:flex; gap:5px; flex-wrap:wrap; align-items:center}
+.fchip{
+  display:inline-flex; align-items:center; gap:5px; padding:3px 8px 3px 5px;
+  border:1px solid var(--rule-2); border-radius:20px; background:var(--panel);
+  cursor:pointer; font-size:11.5px; white-space:nowrap;
+}
+.fchip[aria-pressed="true"]{border-color:var(--ink-2); background:var(--sunk); font-weight:600}
+.fchip .tok{
+  width:16px; height:16px; border-radius:3px; display:grid; place-items:center;
+  font-family:var(--mono); font-size:9.5px; font-weight:600; border:1px solid; color:var(--ink);
+}
+.fchip .n{font-family:var(--mono); font-size:10.5px; color:var(--ink-3)}
+.tok.mandatory{background:var(--hl-mandatory); border-color:var(--hl-mandatory-edge)}
+.tok.conditional{background:var(--hl-conditional); border-color:var(--hl-conditional-edge)}
+.tok.recommended{background:var(--hl-recommended); border-color:var(--hl-recommended-edge)}
+.tok.prohibited{background:var(--hl-prohibited); border-color:var(--hl-prohibited-edge)}
+.tok.informational{background:var(--hl-informational); border-color:var(--hl-informational-edge)}
+.tok.optional{background:var(--hl-optional); border-color:var(--hl-optional-edge)}
+.tok.unclear{background:var(--hl-unclear); border-color:var(--hl-unclear-edge);
+  background-image:repeating-linear-gradient(45deg,transparent 0 3px,rgba(122,91,181,.35) 3px 5px)}
+
+.spacer{flex:1}
+.search{
+  display:flex; align-items:center; gap:6px; padding:3px 9px; background:var(--panel);
+  border:1px solid var(--rule-2); border-radius:5px; min-width:150px;
+}
+.search input{border:0; background:transparent; outline:none; width:100%; font-size:12.5px}
+select.view{
+  padding:4px 8px; background:var(--panel); border:1px solid var(--rule-2);
+  border-radius:5px; font-size:12px; max-width:200px;
+}
+
+.strip{
+  flex:0 0 auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:6px 16px; background:var(--panel); border-bottom:1px solid var(--rule);
+  font-size:11.5px; color:var(--ink-2);
+}
+.meter{display:flex; height:7px; width:170px; border-radius:4px; overflow:hidden; background:var(--sunk); border:1px solid var(--rule)}
+.meter i{display:block; height:100%}
+.meter i.accepted{background:var(--ok)} .meter i.rejected{background:var(--danger)}
+.meter i.expert{background:var(--warn)} .meter i.proposed{background:var(--rule-2)}
+.strip b{font-family:var(--mono); font-weight:600; color:var(--ink)}
+.strip .sep{color:var(--rule-2)}
+.connbadge{display:inline-flex; align-items:center; gap:5px; font-size:11px}
+.connbadge .dot{width:7px; height:7px; border-radius:50%; background:var(--ink-3)}
+.connbadge.on .dot{background:var(--ok)}
+.connbadge.off .dot{background:var(--ink-3)}
+.connbadge.dirty .dot{background:var(--warn)}
+.connbadge.err .dot{background:var(--danger)}
+.connbadge a{color:var(--accent); cursor:pointer; text-decoration:none; border-bottom:1px solid var(--accent-soft)}
+
+.cols{
+  flex:1 1 auto; display:grid; grid-template-columns:var(--c1,1fr) 5px var(--c2,1fr) 5px var(--c3,1fr);
+  min-height:0; overflow:hidden;
+}
+.grip{background:var(--rule); cursor:col-resize; position:relative}
+.grip:hover,.grip:focus-visible{background:var(--accent)}
+.col{display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--panel); overflow:hidden}
+.colhead{
+  flex:0 0 auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:7px 13px; border-bottom:1px solid var(--rule); background:var(--panel-2);
+}
+.colhead h2{margin:0; font-size:10px; font-weight:700; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-2)}
+.colhead .note{font-size:10.5px; color:var(--ink-3); font-family:var(--mono)}
+.colbody{flex:1 1 auto; overflow:auto; overscroll-behavior:contain}
+
+.srcmeta{
+  padding:10px 13px; border-bottom:1px solid var(--rule); background:var(--sunk);
+  font-size:11px; color:var(--ink-2); display:grid; gap:2px;
+}
+.srcmeta .t{font-family:var(--serif); font-size:14px; color:var(--ink); font-weight:600; line-height:1.3}
+.srcmeta dl{display:grid; grid-template-columns:auto 1fr; gap:1px 10px; margin:6px 0 0}
+.srcmeta dt{font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); font-weight:600}
+.srcmeta dd{margin:0; font-family:var(--mono); font-size:10.5px}
+.caveat{
+  margin:8px 0 0; padding:6px 8px; border-left:2px solid var(--warn); background:var(--warn-soft);
+  color:var(--ink-2); font-size:10.5px; line-height:1.45; border-radius:0 3px 3px 0;
+}
+.block{display:flex; gap:0; border-bottom:1px solid var(--rule)}
+.gutter{
+  flex:0 0 46px; padding:11px 5px 11px 9px; display:flex; flex-direction:column; gap:5px;
+  align-items:flex-start; background:var(--sunk); border-right:1px solid var(--rule);
+}
+.gutter .pg{font-family:var(--mono); font-size:9.5px; color:var(--ink-3)}
+.gmark{
+  width:17px; height:17px; border-radius:3px; border:1px solid; display:grid; place-items:center;
+  font-family:var(--mono); font-size:9.5px; font-weight:600; cursor:pointer; position:relative; color:var(--ink);
+}
+.gmark[data-rev="1"]::after{content:""; position:absolute; right:-3px; bottom:-3px; width:7px; height:7px; border-radius:50%; background:var(--ok); border:1.5px solid var(--panel)}
+.gmark[data-rev="2"]::after{background:var(--danger)}
+.gmark[data-rev="3"]::after{background:var(--warn)}
+.btext{flex:1 1 auto; padding:11px 13px; min-width:0}
+.blabel{font-family:var(--mono); font-size:10px; color:var(--ink-3); margin-bottom:4px; display:flex; gap:8px; flex-wrap:wrap; align-items:baseline}
+.blabel b{color:var(--accent-ink); font-weight:600}
+.btext p{margin:0; font-family:var(--serif); font-size:14px; line-height:1.62; color:var(--ink); white-space:pre-wrap}
+mark.hl{padding:1px 1px; border-radius:2px; cursor:pointer; color:var(--ink); box-shadow:inset 0 -2px 0 0 var(--edge); background:var(--fill); border-bottom:1px solid var(--edge)}
+mark.hl.unclear{background-image:repeating-linear-gradient(45deg,transparent 0 4px,rgba(122,91,181,.3) 4px 7px)}
+mark.hl[data-sel="1"]{outline:2px solid var(--accent); outline-offset:1px}
+mark.hl sup{font-family:var(--mono); font-size:8.5px; font-weight:600; padding:0 2px; margin-left:2px; border:1px solid var(--edge); border-radius:2px; vertical-align:super; white-space:nowrap}
+.selbar{position:sticky; bottom:0; padding:8px 13px; background:var(--accent-soft); border-top:1px solid var(--accent); display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:11.5px}
+
+.zone{border-bottom:1px solid var(--rule)}
+.zonehead{display:flex; align-items:center; gap:8px; padding:6px 13px; background:var(--panel-2); border-bottom:1px solid var(--rule); flex-wrap:wrap}
+.zonenum{width:16px; height:16px; border-radius:50%; background:var(--ink-2); color:var(--panel); display:grid; place-items:center; font-family:var(--mono); font-size:9.5px; font-weight:600; flex:0 0 auto}
+.zonehead h3{margin:0; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-2)}
+.zonehead .tag{font-family:var(--mono); font-size:9px; padding:1px 5px; border-radius:3px; border:1px solid var(--rule-2); color:var(--ink-3); text-transform:uppercase; letter-spacing:.05em}
+.tag.ai{background:var(--hl-recommended); border-color:var(--hl-recommended-edge); color:var(--ink)}
+.tag.verbatim{background:var(--sunk)}
+.zonebody{padding:11px 13px}
+blockquote.src{margin:0; padding:10px 12px; background:var(--sunk); border-left:3px solid var(--ink-2); border-radius:0 4px 4px 0; font-family:var(--serif); font-size:14.5px; line-height:1.6}
+.srcref{margin-top:7px; font-family:var(--mono); font-size:10.5px; color:var(--ink-3); display:flex; gap:9px; flex-wrap:wrap; align-items:center}
+.srcref a{color:var(--accent); text-decoration:none; border-bottom:1px solid var(--accent-soft); cursor:pointer}
+.srcref a:hover{border-bottom-color:var(--accent)}
+.vquote{display:inline-flex; align-items:center; gap:4px; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:600; border:1px solid}
+.vquote.yes{background:var(--ok-soft); border-color:var(--ok); color:var(--ok)}
+.vquote.no{background:var(--danger-soft); border-color:var(--danger); color:var(--danger)}
+.interp{font-size:13.5px; line-height:1.6; margin:0; padding:9px 11px; border-radius:4px; border:1px dashed var(--hl-recommended-edge); background:var(--panel)}
+.interp[contenteditable="true"]:focus{border-style:solid; background:var(--panel-2); outline:none}
+.rationale{margin:7px 0 0; font-size:11.5px; color:var(--ink-3); line-height:1.5}
+.grid{display:grid; grid-template-columns:auto 1fr; gap:3px 12px; margin-top:10px; align-items:baseline}
+.grid dt{font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); font-weight:600; white-space:nowrap}
+.grid dd{margin:0; font-size:12px}
+.cats{display:flex; gap:4px; flex-wrap:wrap}
+.cat{font-size:10.5px; padding:1px 6px; border-radius:3px; background:var(--sunk); border:1px solid var(--rule)}
+.conf{display:flex; align-items:center; gap:7px}
+.confbar{width:72px; height:5px; border-radius:3px; background:var(--sunk); border:1px solid var(--rule); overflow:hidden}
+.confbar i{display:block; height:100%; background:var(--accent)}
+.confbar i.low{background:var(--warn)}
+.decis{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px}
+.statusline{display:flex; align-items:center; gap:8px; padding:8px 11px; border-radius:4px; flex-wrap:wrap; border:1px solid var(--rule-2); background:var(--sunk); font-size:12px}
+.statusline.accepted{background:var(--ok-soft); border-color:var(--ok)}
+.statusline.rejected{background:var(--danger-soft); border-color:var(--danger)}
+.statusline.expert{background:var(--warn-soft); border-color:var(--warn)}
+.statusline .sdot{width:8px; height:8px; border-radius:50%; background:var(--ink-3); flex:0 0 auto}
+.statusline.accepted .sdot{background:var(--ok)}
+.statusline.rejected .sdot{background:var(--danger)}
+.statusline.expert .sdot{background:var(--warn)}
+.rel{display:grid; gap:5px; margin-top:9px}
+.relrow{display:flex; gap:8px; align-items:baseline; padding:5px 8px; border-radius:4px; border:1px solid var(--rule); background:var(--panel-2); cursor:pointer; font-size:11.5px}
+.relrow:hover{border-color:var(--accent)}
+.relrow .k{font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.05em; padding:0 4px; border-radius:2px; border:1px solid var(--rule-2); flex:0 0 auto}
+.relrow .k.conflict{background:var(--danger-soft); border-color:var(--danger); color:var(--danger)}
+.relrow .k.duplicate{background:var(--warn-soft); border-color:var(--warn); color:var(--warn)}
+.hist{margin-top:9px; border-top:1px dashed var(--rule); padding-top:8px}
+.hist ol{margin:0; padding:0; list-style:none; display:grid; gap:4px}
+.hist li{display:flex; gap:8px; font-size:11px; color:var(--ink-2); align-items:baseline}
+.hist time{font-family:var(--mono); font-size:10px; color:var(--ink-3); flex:0 0 auto}
+
+.mapcard{padding:11px 13px}
+.fieldrow{display:grid; gap:4px; margin-bottom:10px}
+.fieldrow label{font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); font-weight:600}
+.fieldrow input[type=text],.fieldrow input[type=password],.fieldrow textarea,.fieldrow select{
+  width:100%; padding:5px 8px; border:1px solid var(--rule-2); border-radius:4px; background:var(--panel); font-size:12.5px;
+}
+.fieldrow textarea{resize:vertical; min-height:44px; line-height:1.5}
+.fieldrow .hint{font-size:10.5px; color:var(--ink-3)}
+.two{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.ctype{display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:20px; background:var(--accent-soft); border:1px solid var(--accent); color:var(--accent-ink); font-family:var(--mono); font-size:11px; font-weight:600}
+.why{margin:7px 0 0; font-size:11.5px; line-height:1.5; color:var(--ink-2); padding-left:9px; border-left:2px solid var(--accent-soft)}
+.preview{margin-top:9px; padding:11px; border:1px solid var(--rule-2); border-radius:5px; background:var(--sunk); position:relative}
+.preview::before{content:"Compiler preview"; position:absolute; top:-7px; left:9px; padding:0 5px; background:var(--panel); font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3)}
+.pvlabel{font-size:12px; font-weight:600; margin-bottom:3px; display:flex; gap:5px; align-items:baseline}
+.req-star{color:var(--danger); font-weight:700}
+.pvhelp{font-size:10.5px; color:var(--ink-3); margin-bottom:6px; line-height:1.45}
+.pv input,.pv select,.pv textarea{width:100%; padding:5px 7px; border:1px solid var(--rule-2); border-radius:4px; background:var(--panel); font-size:12px; color:var(--ink-2)}
+.pv .unitrow{display:grid; grid-template-columns:1fr auto; gap:6px}
+.pv .unitrow select{width:auto; min-width:78px}
+.pv table{border-collapse:collapse; width:100%; font-size:11px}
+.pv th,.pv td{border:1px solid var(--rule-2); padding:3px 5px; text-align:left; font-family:var(--mono); font-size:10px}
+.pv th{background:var(--panel-2); font-weight:600; white-space:nowrap}
+.pv td{color:var(--ink-3)}
+.tblwrap{overflow-x:auto}
+.pv .chkrow{display:flex; gap:7px; align-items:center; font-size:12px; color:var(--ink-2)}
+.pv .filebox{border:1.5px dashed var(--rule-2); border-radius:5px; padding:11px; text-align:center; font-size:11.5px; color:var(--ink-3)}
+.pv .notice{padding:7px 9px; border-radius:4px; background:var(--warn-soft); border-left:3px solid var(--warn); font-size:11.5px; line-height:1.45}
+.pv .ro{padding:7px 9px; border-radius:4px; background:var(--panel-2); border:1px solid var(--rule); font-size:11.5px; font-family:var(--serif); color:var(--ink-2)}
+.matrix th.mod{text-align:center; font-size:9px}
+.matrix td.cell{text-align:center; font-weight:600; color:var(--ink)}
+.matrix td.mnd{color:var(--ink-3); font-weight:400}
+.vlist{display:grid; gap:5px; margin-top:4px}
+.vrule{display:grid; gap:2px; padding:6px 8px; border-radius:4px; background:var(--panel-2); border:1px solid var(--rule); border-left:3px solid var(--accent)}
+.vrule code{font-family:var(--mono); font-size:11px; color:var(--ink); word-break:break-word}
+.vrule small{font-size:10.5px; color:var(--ink-3); line-height:1.45}
+.applic{padding:8px 10px; border-radius:4px; background:var(--hl-conditional); border:1px solid var(--hl-conditional-edge); font-size:12px; line-height:1.5}
+.applic b{font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:2px}
+.sectrail{margin-top:11px; padding-top:9px; border-top:1px dashed var(--rule); font-family:var(--mono); font-size:10.5px; color:var(--ink-3); line-height:1.6}
+.sectrail a{color:var(--accent); cursor:pointer; text-decoration:none; border-bottom:1px solid var(--accent-soft)}
+.implrow{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:10px}
+
+.empty{padding:34px 20px; text-align:center; color:var(--ink-3); font-size:12.5px; line-height:1.6}
+.empty b{display:block; color:var(--ink-2); font-size:13.5px; margin-bottom:5px; font-weight:600}
+.listrow{display:flex; gap:9px; align-items:flex-start; padding:8px 13px; border-bottom:1px solid var(--rule); cursor:pointer; background:var(--panel)}
+.listrow:hover{background:var(--panel-2)}
+.listrow[aria-selected="true"]{background:var(--accent-soft)}
+.listrow .rid{font-family:var(--mono); font-size:10px; color:var(--ink-3); flex:0 0 auto; padding-top:2px}
+.listrow .rq{font-family:var(--serif); font-size:12.5px; line-height:1.45; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical}
+
+dialog{border:1px solid var(--rule-2); border-radius:8px; background:var(--panel); color:var(--ink); box-shadow:var(--shadow); padding:0; max-width:min(620px,94vw); width:100%}
+dialog::backdrop{background:rgba(10,20,18,.55)}
+.dhead{display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--rule)}
+.dhead h3{margin:0; font-size:14px; font-weight:600}
+.dbody{padding:14px 16px; max-height:66vh; overflow:auto}
+.dfoot{display:flex; gap:8px; justify-content:flex-end; padding:11px 16px; border-top:1px solid var(--rule); flex-wrap:wrap}
+.drop{border:1.5px dashed var(--rule-2); border-radius:6px; padding:20px; text-align:center; color:var(--ink-3); font-size:12.5px; cursor:pointer}
+.drop.over{border-color:var(--accent); background:var(--accent-soft); color:var(--accent-ink)}
+.prog{height:5px; border-radius:3px; background:var(--sunk); border:1px solid var(--rule); overflow:hidden; margin-top:9px}
+.prog i{display:block; height:100%; background:var(--accent); width:0; transition:width .3s}
+.log{font-family:var(--mono); font-size:11px; color:var(--ink-2); margin-top:9px; display:grid; gap:2px; max-height:150px; overflow:auto}
+.pastearea{width:100%; min-height:130px; padding:9px; border:1px solid var(--rule-2); border-radius:5px; background:var(--panel); font-family:var(--mono); font-size:11.5px; line-height:1.5; resize:vertical}
+.tabs{display:flex; gap:4px; margin-bottom:12px}
+.tabs button{padding:5px 11px; border:1px solid var(--rule-2); border-radius:5px; background:var(--panel); cursor:pointer; font-size:12px}
+.tabs button[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); font-weight:600}
+.mini{font-size:11px; color:var(--ink-3); line-height:1.55}
+.mobilenav{display:none}
+.banner{display:flex; align-items:center; gap:10px; padding:7px 16px; background:var(--warn-soft); border-bottom:1px solid var(--warn); font-size:12px; flex-wrap:wrap}
+.banner a{color:var(--accent); cursor:pointer; text-decoration:none; border-bottom:1px solid var(--accent-soft); font-weight:600}
+
+@media (max-width:900px){
+  .cols{grid-template-columns:1fr; grid-template-rows:1fr}
+  .grip{display:none}
+  .col{display:none; border-left:0}
+  .col.active{display:flex}
+  .mobilenav{display:flex; flex:0 0 auto; gap:4px; padding:7px 16px; padding-bottom:calc(7px + env(safe-area-inset-bottom,0px)); background:var(--panel); border-top:1px solid var(--rule)}
+  .mobilenav button{flex:1; padding:7px; border:1px solid var(--rule-2); border-radius:5px; background:var(--panel); font-size:11.5px; cursor:pointer}
+  .mobilenav button[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); font-weight:600}
+  .two{grid-template-columns:1fr}
+  body{font-size:13px}
+}
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="brand"><b>Clause&nbsp;→&nbsp;Compiler</b><span>STANDALONE</span></div>
+  <div class="projchips" id="projchips"></div>
+  <div class="acts">
+    <button class="btn" id="btnImport">Import</button>
+    <button class="btn" id="btnAudit">Audit trail</button>
+    <button class="btn" id="btnExport">Export</button>
+    <button class="btn" id="btnSettings">Settings</button>
+    <button class="btn primary" id="btnAdd">Add document</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<div class="toolbar">
+  <div class="doctabs" id="doctabs"></div>
+  <div class="filters" id="filters"></div>
+  <div class="spacer"></div>
+  <select class="view" id="savedview" aria-label="Saved filters">
+    <option value="all">All requirements</option>
+    <option value="unreviewed">Unreviewed</option>
+    <option value="mandatory">Mandatory only</option>
+    <option value="nomap">No compiler mapping</option>
+    <option value="lowconf">Low confidence (&lt;0.6)</option>
+    <option value="conflict">Conflicts &amp; duplicates</option>
+    <option value="expert">Flagged for expert review</option>
+    <option value="awaiting">Approved, awaiting implementation</option>
+  </select>
+  <div class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search clause, quote, field…" aria-label="Search requirements"></div>
+</div>
+
+<div class="strip" id="strip"></div>
+
+<main class="cols" id="cols">
+  <section class="col active" id="colSrc" aria-label="Source document">
+    <div class="colhead">
+      <h2>1 · Source document</h2>
+      <span class="note" id="srcCount"></span>
+      <div class="spacer"></div>
+      <button class="btn sm ghost" id="btnPrevHl" title="Previous highlight">↑</button>
+      <button class="btn sm ghost" id="btnNextHl" title="Next highlight">↓</button>
+    </div>
+    <div class="colbody" id="srcBody"></div>
+  </section>
+  <div class="grip" id="grip1" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize source panel"></div>
+  <section class="col active" id="colReq" aria-label="Extracted requirement">
+    <div class="colhead"><h2>2 · Extracted requirement</h2><span class="note" id="reqId"></span></div>
+    <div class="colbody" id="reqBody"></div>
+  </section>
+  <div class="grip" id="grip2" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize requirement panel"></div>
+  <section class="col active" id="colMap" aria-label="Compiler implementation">
+    <div class="colhead"><h2>3 · Compiler implementation</h2><span class="note" id="mapStatus"></span></div>
+    <div class="colbody" id="mapBody"></div>
+  </section>
+</main>
+
+<nav class="mobilenav" id="mnav">
+  <button data-c="colSrc" aria-pressed="true">Source</button>
+  <button data-c="colReq" aria-pressed="false">Requirement</button>
+  <button data-c="colMap" aria-pressed="false">Mapping</button>
+</nav>
+
+<dialog id="dlgAdd">
+  <div class="dhead"><h3>Add a document to this analysis</h3><div class="spacer"></div><button class="btn sm ghost" data-close>Close</button></div>
+  <div class="dbody">
+    <div class="tabs">
+      <button id="tabPdf" aria-pressed="true">Upload PDF</button>
+      <button id="tabPaste" aria-pressed="false">Paste clause text</button>
+    </div>
+    <div id="paneMeta" class="two" style="margin-bottom:12px">
+      <div class="fieldrow"><label for="mTitle">Document title</label><input id="mTitle" type="text" placeholder="c-PCR 2019:14 Concrete elements"></div>
+      <div class="fieldrow"><label for="mType">Document type</label>
+        <select id="mType">
+          <option>PCR</option><option>Complementary PCR</option><option>General Programme Instructions</option>
+          <option>Standard</option><option>Verification guideline</option><option>Programme-operator guidance</option>
+          <option>National / regional requirement</option><option>Internal instruction</option>
+        </select></div>
+      <div class="fieldrow"><label for="mVer">Version</label><input id="mVer" type="text" placeholder="1.0.0"></div>
+      <div class="fieldrow"><label for="mPub">Publisher / programme operator</label><input id="mPub" type="text" placeholder="EPD International AB"></div>
+    </div>
+    <div id="panePdf">
+      <div class="drop" id="drop" tabindex="0" role="button">
+        <b>Drop a PDF here, or click to choose</b><br>
+        <span class="mini">Text is extracted in your browser with page numbers preserved. Scanned pages without a text layer will be reported, not silently skipped — OCR is not part of this tool.</span>
+      </div>
+      <input type="file" id="file" accept="application/pdf" hidden>
+    </div>
+    <div id="panePaste" hidden>
+      <textarea class="pastearea" id="paste" placeholder="Paste one or more clauses. Mark page breaks as [[page 17]] if you want page references to come through."></textarea>
+    </div>
+    <div class="prog" id="prog" hidden><i></i></div>
+    <div class="log" id="log"></div>
+    <p class="mini" id="keyNote" style="margin-top:12px">Extraction calls the Anthropic API directly from this page using the key you saved in Settings. Nothing is uploaded anywhere else. Results are proposals only — status "Proposed" until you accept them.</p>
+  </div>
+  <div class="dfoot">
+    <button class="btn" data-close>Cancel</button>
+    <button class="btn" id="btnStop" hidden>Stop</button>
+    <button class="btn primary" id="btnRun">Extract requirements</button>
+  </div>
+</dialog>
+
+<dialog id="dlgSettings">
+  <div class="dhead"><h3>Settings</h3><div class="spacer"></div><button class="btn sm ghost" data-close>Close</button></div>
+  <div class="dbody">
+    <p class="mini" style="margin-top:0">Everything here is stored only in this browser (and, if you connect a repository below, in that private repository). Nothing is sent to us.</p>
+
+    <div class="fieldrow"><label for="sKey">Anthropic API key</label>
+      <input id="sKey" type="password" placeholder="sk-ant-…" autocomplete="off">
+      <span class="hint">From <span style="font-family:var(--mono)">console.anthropic.com</span>. Required for "Add document". Stored locally; also saved to your private repository below if connected, so you don't have to re-enter it on other computers.</span>
+    </div>
+    <div class="fieldrow"><label for="sModel">Model</label>
+      <input id="sModel" type="text" placeholder="claude-sonnet-5">
+      <span class="hint">Any model id your key has access to.</span>
+    </div>
+
+    <div style="margin:16px 0 10px; border-top:1px dashed var(--rule)"></div>
+    <p class="mini" style="margin:10px 0"><b style="color:var(--ink-2)">Optional — persistent storage.</b> Connect a private GitHub repository and your documents, reviews and mappings are saved there automatically, so the same work is there on any computer. Without this, use Export / Import to carry work between sessions and machines.</p>
+
+    <div class="two">
+      <div class="fieldrow"><label for="sOwner">GitHub username or org</label><input id="sOwner" type="text" placeholder="rasmus"></div>
+      <div class="fieldrow"><label for="sRepo">Private repository name</label><input id="sRepo" type="text" placeholder="pcr-data"></div>
+    </div>
+    <div class="fieldrow"><label for="sToken">GitHub personal access token</label>
+      <input id="sToken" type="password" placeholder="github_pat_…" autocomplete="off">
+      <span class="hint">Fine-grained token, scoped to this one repository, with Contents: Read and write. Create at github.com → Settings → Developer settings → Personal access tokens. Re-enter this on every new computer — it is not itself stored in the repository it unlocks.</span>
+    </div>
+    <div id="sTestResult" class="mini"></div>
+  </div>
+  <div class="dfoot">
+    <button class="btn" id="btnTestConn">Test connection</button>
+    <button class="btn no" id="btnDisconnect">Disconnect</button>
+    <div class="spacer"></div>
+    <button class="btn" data-close>Cancel</button>
+    <button class="btn primary" id="btnSaveSettings">Save</button>
+  </div>
+</dialog>
+
+<dialog id="dlgAudit">
+  <div class="dhead"><h3>Audit trail</h3><div class="spacer"></div><button class="btn sm ghost" data-close>Close</button></div>
+  <div class="dbody" id="auditBody"></div>
+</dialog>
+
+<dialog id="dlgExport">
+  <div class="dhead"><h3>Export</h3><div class="spacer"></div><button class="btn sm ghost" data-close>Close</button></div>
+  <div class="dbody" id="exportBody"></div>
+  <div class="dfoot">
+    <button class="btn" data-close>Close</button>
+    <button class="btn" id="btnExpCsv">Requirements register (CSV)</button>
+    <button class="btn primary" id="btnExpJson">Implementation spec (JSON)</button>
+  </div>
+</dialog>
+
+<dialog id="dlgMerge">
+  <div class="dhead"><h3 id="mergeTitle">Merge with</h3><div class="spacer"></div><button class="btn sm ghost" data-close>Close</button></div>
+  <div class="dbody" id="mergeBody"></div>
+</dialog>
+
+<input type="file" id="importFile" accept="application/json" hidden>
+
+<script>
+"use strict";
+
+/* ============================ reference data ============================ */
+
+const OBLIGATIONS = {
+  mandatory:     {label:"Mandatory",     tok:"M", order:1},
+  prohibited:    {label:"Prohibited",    tok:"P", order:2},
+  conditional:   {label:"Conditional",   tok:"C", order:3},
+  recommended:   {label:"Recommended",   tok:"R", order:4},
+  optional:      {label:"Optional",      tok:"O", order:5},
+  informational: {label:"Informational", tok:"i", order:6},
+  unclear:       {label:"Needs expert review", tok:"?", order:7}
+};
+
+const CATEGORIES = ["Product identification","Declared or functional unit","Product description","Product composition",
+"Technical information","Reference service life","System boundary","Life-cycle modules","Cut-off rules","Allocation",
+"Data quality","Data representativeness","Primary and secondary data","Background datasets","Electricity modelling",
+"Biogenic carbon","Recycled content","End-of-life modelling","Scenario assumptions","Environmental indicators",
+"Resource-use indicators","Waste categories","Output flows","Additional environmental information","Dangerous substances",
+"Indoor-air information","Packaging","Transport","Installation","Use and maintenance","Demolition or deconstruction",
+"Reuse, recovery and recycling","Comparability statement","Verification statement","Programme information","References",
+"Mandatory disclaimers","Tables, figures and declared results","Supporting documentation"];
+
+const COMPONENTS = {
+  "text":{label:"Single-line text"}, "textarea":{label:"Multi-line text"}, "richtext":{label:"Rich text"},
+  "integer":{label:"Integer"}, "decimal":{label:"Decimal"}, "percentage":{label:"Percentage"}, "date":{label:"Date"},
+  "select":{label:"Dropdown list"}, "multiselect":{label:"Multi-select list"}, "radio":{label:"Radio-button group"},
+  "checkbox":{label:"Checkbox"}, "boolean":{label:"Yes/no switch"}, "unit-number":{label:"Unit-aware number"},
+  "calculated":{label:"Calculated field"}, "table":{label:"Data table"}, "repeatable":{label:"Repeatable table"},
+  "module-matrix":{label:"Life-cycle module matrix"}, "indicator-table":{label:"Environmental-indicator table"},
+  "file":{label:"File upload"}, "reference":{label:"Reference selector"}, "dataset":{label:"Dataset selector"},
+  "conditional":{label:"Conditional section"}, "readonly":{label:"Generated read-only text"},
+  "notice":{label:"Warning / information message"}, "attestation":{label:"Attestation control"}
+};
+
+const MODULES = ["A1","A2","A3","A4","A5","B1","B2","B3","B4","B5","B6","B7","C1","C2","C3","C4","D"];
+
+/* ============================ demo project + seeded documents ============================ */
+/* These load every time, work offline, and are never written to GitHub. They exist so the
+   workspace is never empty on first run. Real documents you add live alongside them. */
+
+const PROJECT = {
+  name: "Prefabricated concrete wall elements",
+  category: "UN CPC 3755 — Prefabricated structural components",
+  operator: "EPD International AB",
+  market: "EU / EEA",
+  epdType: "Type b — product-specific, cradle to gate with modules C and D",
+  standards: "EN 15804:2012+A2:2019 · ISO 14025 · ISO 21930",
+  compiler: "EPD compiler template v4.2"
+};
+
+const DOCS = [
+  {
+    id:"gpi5", tier:3, kind:"General Programme Instructions", demo:true,
+    title:"General Programme Instructions for the International EPD System",
+    version:"5.0.1", publisher:"EPD International AB", date:"2025-02-27",
+    lang:"en", status:"Active", file:"gpi5-0-1_20250227.pdf",
+    blocks:[
+      {page:28, clause:"7.1", heading:"Language", text:"EPDs shall as a minimum be published in English to ensure global applicability and usefulness, but may also be published in other languages."},
+      {page:29, clause:"7.4", heading:"Content of the EPD", text:"The EPD shall include the following sections: Cover page, General information, Information about EPD owner, Product information, Content declaration, LCA information, Environmental performance, Version history, Abbreviations, References."},
+      {page:30, clause:"7.4.5", heading:"Content declaration", text:"Must declare composition/content information relevant to the product category as specified in the applicable PCR."},
+      {page:30, clause:"7.4.6", heading:"LCA information", text:"Shall include system boundary description, allocation procedures, data quality information, and reference to the LCA report."},
+      {page:31, clause:"7.4.7", heading:"Environmental performance", text:"Results must be presented per life-cycle stage with environmental performance indicators as specified in the applicable PCR."},
+      {page:31, clause:"7.4.10", heading:"Comparability", text:"The EPD shall include a statement on comparability: “EPDs are not intended to be compared with each other, because they do not comply with identical assumptions, methods…”"},
+      {page:24, clause:"6.6", heading:"Registration and publication", text:"The Secretariat subsequently publish the EPD in the EPD library once having confirmed that all requirements are met."},
+      {page:25, clause:"6.8", heading:"Updating an EPD", text:"An updated EPD shall undergo re-verification, except when only editorial changes are made. Updated EPDs require a description of the differences versus the previous version in a section named “Version history”."},
+      {page:26, clause:"6.8.1", heading:"Mandatory update triggers", text:"Updates are required for an increase of 10% or more in the aggregated results, or substantial changes to the declared product information."},
+      {page:26, clause:"6.9", heading:"Depublication", text:"Depublished EPDs shall not be considered valid, even if the validity period as stated in the EPD has not passed."},
+      {page:45, clause:"8.4", heading:"Verification", text:"Verification must be carried out by approved individual verifiers or accredited certification bodies, with documented verification reports."}
+    ]
+  },
+  {
+    id:"pcr201914", tier:4, kind:"PCR", demo:true,
+    title:"PCR 2019:14 Construction products",
+    version:"2.0.0 (open-consultation draft)", publisher:"EPD International AB", date:"2024-10",
+    lang:"en", status:"Draft — open consultation", file:"pcr2019-14-construction-products-draft-v2-0-0.pdf",
+    blocks:[
+      {page:9,  clause:"2.2.1", heading:"Product category definition", text:"An EPD shall specify its product category in accordance with the UN CPC classification system, if possible."},
+      {page:9,  clause:"2.2.2", heading:"EPD types", text:"EPDs of type d and type e shall only be used if the following three conditions are valid."},
+      {page:10, clause:"2.2.2", heading:"Modules to be declared (Table 2)", text:"A4) Transport: Not applicable for type a; Optional for goods; Mandatory for services. A5) Construction installation: Not applicable for type a; Optional for goods; Mandatory for services. C1) Deconstruction, demolition: Mandatory. D) Reuse, recovery, recycling, potential: Mandatory."},
+      {page:10, clause:"2.2.2", heading:"Packaging and biogenic carbon", text:"If the packaging contains more than 5% biogenic carbon, module A5 shall be included at least for balancing."},
+      {page:12, clause:"2.2.4", heading:"Validity and updating", text:"An EPD shall be updated and re-verified during its validity if an increase of 10% or more in aggregated results. If such changes occurred, but the EPD is not updated, the EPD owner shall depublish the EPD."},
+      {page:16, clause:"4.2",   heading:"Declared unit", text:"EPDs based on this PCR without using a c-PCR shall use a declared unit. EPDs based on this PCR together with a c-PCR may use a functional unit if allowed by the c-PCR."},
+      {page:17, clause:"4.3.1", heading:"System boundary — energy", text:"Each module shall include the generation of electricity and production of fuels, steam and other energy carriers."},
+      {page:17, clause:"4.3.2", heading:"System boundary — waste", text:"Each module shall include the waste processing of waste generated in the module up to end-of-waste state."},
+      {page:17, clause:"4.3.5", heading:"Excluded processes", text:"Business travel of personnel, travel to and from work by personnel shall be excluded, unless the c-PCR says otherwise."},
+      {page:18, clause:"4.3.6", heading:"Infrastructure and capital goods", text:"In general, the production and end-of-life processes of infrastructure and capital goods shall not be included. If infrastructure/capital goods are included, this shall be described in the EPD, unless they contribute less than 10%."},
+      {page:18, clause:"3.7",   heading:"Use-stage scenarios", text:"Module B6 shall be included also for non-EEE products that consumes energy in the use stage. Scenarios for module B6 shall represent normal (i.e., anticipated) use and be geographically representative."},
+      {page:19, clause:"4.4",   heading:"Cut-off rules", text:"LCI data shall include a minimum of 95% of total inflows (mass and energy) per life-cycle stages. Exclusion of LCI data based on the cut-off rule shall be based on a sensitivity analysis and/or conservative assumptions."},
+      {page:20, clause:"4.5.1", heading:"Allocation of co-products", text:"Allocation shall be avoided, if possible, by dividing the unit process into two or more sub-processes. Allocation shall be based on physical properties when there is a relevant underlying physical relationship. In all other cases, allocation shall be based on economic values of the product and co-products."},
+      {page:23, clause:"4.5.2", heading:"Allocation of waste", text:"If it is unknown whether the end-of-waste criteria are fulfilled, a conservative assumption shall be made."},
+      {page:24, clause:"4.5.3", heading:"Scrap and recycled materials", text:"If post-industrial and/or post-consumer scrap is a main input, the allocation procedure applied shall be clearly described. If the scrap inputs contribute more than 10% to the GWP-GHG results, the GWP-GHG intensity shall be declared."},
+      {page:26, clause:"4.6.1", heading:"Primary data", text:"Primary data shall be used for (at least) the processes over which the product manufacturer has operational control. Proxy data shall not contribute to more than 10% of the A1-A3 results for any of the impact indicators."},
+      {page:27, clause:"4.6.2", heading:"Data collection period", text:"Data should be averaged over at least one year of operations; deviations shall be justified. The reference year of the data shall not be more than five years old and shall be representative for validity period."},
+      {page:27, clause:"4.6.3", heading:"Secondary data", text:"The reference year shall be as current as possible and not represent a reference year older than 10 years."},
+      {page:27, clause:"4.6.4", heading:"Data quality assessment", text:"A data quality assessment that complies with EN 15941 shall be done and reported in the LCA report. Assessment shall cover data that together contribute to at least 80% of results of each impact indicator."}
+    ]
+  }
+];
+
+const SEED = [
+{id:"R-001", doc:"pcr201914", clause:"4.2", page:16,
+ quote:"EPDs based on this PCR without using a c-PCR shall use a declared unit.",
+ obligation:"mandatory", categories:["Declared or functional unit"], epdSection:"LCA information → Declared unit",
+ applicability:"Applies when no complementary PCR is selected for the project.",
+ interpretation:"When the EPD is built on PCR 2019:14 alone, the basis of declaration must be a declared unit, not a functional unit. The compiler should therefore force the declared-unit path and only open the functional-unit path once a c-PCR that permits it has been selected.",
+ rationale:"Unconditional 'shall' fixing the basis of declaration, which the compiler has to enforce before any results can be entered.",
+ confidence:0.94, related:[{id:"R-002", kind:"pair"}],
+ compiler:{section:"LCA information", field:"Declared unit", componentType:"unit-number", required:true,
+  helpText:"State the amount of product the declared results refer to, for example 1 m² of wall element at 200 mm thickness.",
+  unit:"kg | m | m² | m³ | piece", allowedValues:["kg","m","m²","m³","piece","t"], repeatability:"single",
+  calculation:null, defaultValue:null, devNotes:"Bind the unit list to the c-PCR selection; when no c-PCR is chosen, disable the 'functional unit' radio entirely rather than hiding it, so the user sees why.",
+  validations:[
+    {rule:"required(declaredUnit.amount) AND required(declaredUnit.unit)", why:"The EPD cannot be published without a basis of declaration."},
+    {rule:"IF project.cPCR == none THEN basisOfDeclaration == 'declared unit'", why:"Clause 4.2 permits a functional unit only together with a c-PCR."},
+    {rule:"declaredUnit.amount > 0", why:"A non-positive declared quantity cannot scale LCA results."}
+  ]}},
+{id:"R-002", doc:"pcr201914", clause:"4.2", page:16,
+ quote:"EPDs based on this PCR together with a c-PCR may use a functional unit if allowed by the c-PCR.",
+ obligation:"conditional", categories:["Declared or functional unit"], epdSection:"LCA information → Declared unit",
+ applicability:"If a c-PCR is selected AND that c-PCR allows a functional unit.",
+ interpretation:"A functional unit is permitted only when two conditions hold together: a c-PCR applies and that c-PCR explicitly allows it. This is a permission, not an obligation, so the compiler should offer the choice rather than default to it.",
+ rationale:"'may … if allowed by' is conditional permission language governing the same field as R-001.",
+ confidence:0.9, related:[{id:"R-001", kind:"pair"}],
+ compiler:{section:"LCA information", field:"Basis of declaration", componentType:"radio", required:true,
+  helpText:"Choose declared unit, or functional unit where the applicable c-PCR allows it.",
+  unit:null, allowedValues:["Declared unit","Functional unit"], repeatability:"single",
+  calculation:null, defaultValue:"Declared unit",
+  devNotes:"Needs a per-c-PCR flag 'allowsFunctionalUnit' in the c-PCR registry. Until that exists, keep the option disabled with an explanatory tooltip.",
+  validations:[
+    {rule:"IF basisOfDeclaration == 'Functional unit' THEN required(project.cPCR) AND cPCR.allowsFunctionalUnit == true", why:"Both conditions in clause 4.2 must hold before a functional unit is admissible."},
+    {rule:"IF basisOfDeclaration == 'Functional unit' THEN required(functionalUnit.description)", why:"A functional unit is meaningless without the stated function and performance."}
+  ]}},
+{id:"R-003", doc:"pcr201914", clause:"2.2.2", page:10,
+ quote:"C1) Deconstruction, demolition: Mandatory. D) Reuse, recovery, recycling, potential: Mandatory.",
+ obligation:"mandatory", categories:["Life-cycle modules","End-of-life modelling","Reuse, recovery and recycling"],
+ epdSection:"Environmental performance → Declared modules",
+ applicability:null,
+ interpretation:"Modules C1 and D must be declared for every EPD in scope of this PCR. In the compiler the module matrix cannot be saved with C1 or D left as MND, and the results table must expose the corresponding columns.",
+ rationale:"Table 2 marks these modules 'Mandatory' with no qualifying condition attached.",
+ confidence:0.88, related:[{id:"R-004", kind:"pair"}],
+ compiler:{section:"Environmental performance", field:"Declared life-cycle modules", componentType:"module-matrix", required:true,
+  helpText:"Mark each module as declared (X), module not declared (MND) or module not relevant (MNR). C1–C4 and D are mandatory under PCR 2019:14.",
+  unit:null, allowedValues:["X","MND","MNR"], repeatability:"per module",
+  calculation:null, defaultValue:null,
+  devNotes:"The matrix is the single source of truth for which columns the indicator tables render. Changing a module from X to MND must warn that entered results will be discarded.",
+  validations:[
+    {rule:"modules.C1 == 'X' AND modules.D == 'X'", why:"Table 2 declares C1 and D mandatory for all EPD types in scope."},
+    {rule:"FOR EACH module WHERE modules[m] == 'X': indicatorTable.column[m] is complete", why:"A declared module with empty result columns is an incomplete EPD."},
+    {rule:"BLOCK PUBLICATION IF any mandatory module is not 'X'", why:"Publication must not be possible while a mandatory module is undeclared."}
+  ]}},
+{id:"R-019", doc:"gpi5", clause:"7.4.10", page:31,
+ quote:"The EPD shall include a statement on comparability: “EPDs are not intended to be compared with each other, because they do not comply with identical assumptions, methods…”",
+ obligation:"mandatory", categories:["Comparability statement","Mandatory disclaimers"],
+ epdSection:"General information → Comparability",
+ applicability:null,
+ interpretation:"A fixed disclaimer must appear in every EPD. Because the wording is prescribed rather than authored, it belongs in the compiler as generated read-only text, not as a field a user can edit and get wrong.",
+ rationale:"Prescribed wording introduced by a 'shall include' — the strongest case for a read-only generated component.",
+ confidence:0.95, related:[],
+ compiler:{section:"General information", field:"Comparability statement", componentType:"readonly", required:true,
+  helpText:"This statement is inserted automatically and cannot be edited. It is required by the General Programme Instructions.",
+  unit:null, allowedValues:null, repeatability:"single",
+  calculation:"Rendered from the GPI template string for the EPD's language.",
+  defaultValue:"EPDs are not intended to be compared with each other, because they do not comply with identical assumptions, methods…",
+  devNotes:"Store the canonical wording per language against the GPI version so an EPD published under GPI 5.0.1 keeps 5.0.1's wording after the next GPI release.",
+  validations:[
+    {rule:"comparabilityStatement is present and matches the GPI template for the EPD language", why:"The wording is prescribed and must not drift."},
+    {rule:"field is read-only in all roles", why:"An editable disclaimer will eventually be edited."}
+  ]}},
+{id:"R-024", doc:"gpi5", clause:"8.4", page:45,
+ quote:"Verification must be carried out by approved individual verifiers or accredited certification bodies, with documented verification reports.",
+ obligation:"mandatory", categories:["Verification statement","Supporting documentation"],
+ epdSection:"General information → Verification",
+ applicability:null,
+ interpretation:"The verifier must be drawn from an approved list rather than typed in freely, and the verification report has to be attached. A reference selector bound to the programme's verifier registry is the component that makes this checkable.",
+ rationale:"Names an approved population — the signal for a reference selector rather than a text field.",
+ confidence:0.91, related:[],
+ compiler:{section:"General information", field:"Verifier", componentType:"reference", required:true,
+  helpText:"Select the approved individual verifier or accredited certification body from the programme register.",
+  unit:null, allowedValues:null, repeatability:"single", calculation:null, defaultValue:null,
+  devNotes:"Needs a live link to the programme's verifier register. A free-text fallback should be explicitly blocked, not just discouraged.",
+  validations:[
+    {rule:"verifier IN programmeRegister.approvedVerifiers WHERE status == 'active'", why:"Only approved verifiers may verify."},
+    {rule:"required(upload: verificationReport)", why:"The clause requires a documented verification report."},
+    {rule:"verifier.organisation != epdOwner.organisation", why:"Independence is a verification requirement; the compiler can catch the obvious breach."}
+  ]}}
+];
+
+/* ============================ state ============================ */
+
+const state = {
+  reqs: [], docs: DOCS.slice(), activeDoc: "pcr201914", selected: "R-001",
+  obligationFilter: new Set(), savedView: "all", query: "",
+  reviews: {},
+  gh: {owner:"", repo:"", token:""}, anthropicKey:"", model:"claude-sonnet-5",
+  ghShas: {}, connected:false, connecting:false, connError:"", dirty:new Set(), lastSync:null,
+  me: {name:""}
+};
+SEED.forEach(r => state.reqs.push(Object.assign({source:"seed", quoteVerified:true}, r)));
+
+/* ============================ helpers ============================ */
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const byId = id => state.reqs.find(r => r.id === id);
+const docById = id => state.docs.find(d => d.id === id);
+const review = id => state.reviews[id] || {status:"proposed", history:[]};
+const nowISO = () => new Date().toISOString();
+const fmtTime = iso => { try { return new Date(iso).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"}); } catch(e){ return iso; } };
+const uid = () => Math.random().toString(36).slice(2,8);
+
+function effObligation(r){ const rv = review(r.id); return rv.obligation || r.obligation; }
+function effInterp(r){ const rv = review(r.id); return rv.interpretation != null ? rv.interpretation : r.interpretation; }
+function effMapping(r){ const rv = review(r.id); return rv.mapping || r.compiler; }
+function statusOf(r){ const rv = review(r.id); if (rv.status && rv.status !== "proposed") return rv.status; if (r.needsExpert) return "expert"; return "proposed"; }
+
+function locate(hay, needle){
+  if (!hay || !needle) return null;
+  const map = []; let norm = "";
+  for (let i=0;i<hay.length;i++){
+    const ch = hay[i];
+    if (/\s/.test(ch)){ if (norm.length && norm[norm.length-1] === " ") continue; norm += " "; map.push(i); }
+    else { norm += ch; map.push(i); }
+  }
+  const nn = needle.replace(/\s+/g," ").trim();
+  const at = norm.indexOf(nn);
+  if (at < 0) return null;
+  const start = map[at];
+  const endIdx = at + nn.length - 1;
+  const end = (map[endIdx] != null ? map[endIdx] : hay.length-1) + 1;
+  return {start, end};
+}
+
+function b64Encode(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = ""; for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64Decode(b64){
+  const bin = atob(b64.replace(/\n/g,""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+/* ============================ local persistence (always on) ============================ */
+
+const LS = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+
+function loadSettings(){
+  state.gh = LS.get("cc.gh", {owner:"", repo:"", token:""});
+  state.anthropicKey = LS.get("cc.anthropicKey", "");
+  state.model = LS.get("cc.model", "claude-sonnet-5");
+  state.me.name = LS.get("cc.me", "");
+}
+function saveSettingsLocal(){
+  LS.set("cc.gh", state.gh); LS.set("cc.anthropicKey", state.anthropicKey);
+  LS.set("cc.model", state.model); LS.set("cc.me", state.me.name);
+}
+
+/* ============================ GitHub persistence (optional) ============================ */
+
+function ghConfigured(){ return !!(state.gh.owner && state.gh.repo && state.gh.token); }
+
+async function ghRequest(path, opts){
+  const url = "https://api.github.com/repos/" + encodeURIComponent(state.gh.owner) + "/" +
+    encodeURIComponent(state.gh.repo) + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(url, Object.assign({
+    headers: Object.assign({
+      "Authorization": "Bearer " + state.gh.token,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    }, (opts && opts.headers) || {})
+  }, opts||{}));
+  return res;
+}
+
+async function ghGetFile(path){
+  const res = await ghRequest(path, {method:"GET"});
+  if (res.status === 404) return {exists:false};
+  if (!res.ok) { const t = await res.text().catch(()=> ""); throw new Error("GitHub GET " + path + " failed (" + res.status + "): " + t.slice(0,200)); }
+  const json = await res.json();
+  state.ghShas[path] = json.sha;
+  return {exists:true, sha:json.sha, data: JSON.parse(b64Decode(json.content))};
+}
+
+async function ghPutFile(path, obj, message){
+  const body = {message: message || ("Update " + path), content: b64Encode(JSON.stringify(obj, null, 2))};
+  if (state.ghShas[path]) body.sha = state.ghShas[path];
+  let res = await ghRequest(path, {method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  if (res.status === 409){
+    // sha mismatch — refetch and retry once
+    const fresh = await ghGetFile(path);
+    if (fresh.exists) body.sha = fresh.sha; else delete body.sha;
+    res = await ghRequest(path, {method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  }
+  if (!res.ok){ const t = await res.text().catch(()=> ""); throw new Error("GitHub PUT " + path + " failed (" + res.status + "): " + t.slice(0,200)); }
+  const json = await res.json();
+  state.ghShas[path] = json.content.sha;
+  return json;
+}
+
+async function testConnection(){
+  const out = $("#sTestResult");
+  out.textContent = "Testing…"; out.style.color = "";
+  try {
+    const res = await ghRequest("", {method:"GET"});
+    if (res.status === 404){ out.textContent = "✓ Connected. Repository is empty — it will be initialised on first save."; out.style.color = "var(--ok)"; return true; }
+    if (res.ok){ out.textContent = "✓ Connected and repository has data."; out.style.color = "var(--ok)"; return true; }
+    if (res.status === 401){ out.textContent = "✕ Token rejected (401). Check it was copied in full and hasn't expired."; out.style.color = "var(--danger)"; return false; }
+    if (res.status === 403){ out.textContent = "✕ Forbidden (403). The token needs Contents: Read and write on this repository."; out.style.color = "var(--danger)"; return false; }
+    if (res.status === 404){ out.textContent = "✕ Repository not found. Check the owner and repository name, and that the token can see it."; out.style.color = "var(--danger)"; return false; }
+    out.textContent = "✕ Unexpected response (" + res.status + ")."; out.style.color = "var(--danger)"; return false;
+  } catch(e){
+    out.textContent = "✕ Could not reach GitHub: " + (e && e.message || e); out.style.color = "var(--danger)"; return false;
+  }
+}
+
+let syncTimer = null;
+function scheduleSync(docId){
+  state.dirty.add(docId);
+  renderConn();
+  if (!ghConfigured()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(runSync, 1400);
+}
+
+async function runSync(){
+  if (!ghConfigured() || state.dirty.size === 0) return;
+  const ids = Array.from(state.dirty); state.dirty.clear();
+  state.connecting = true; renderConn();
+  try {
+    for (const docId of ids){
+      const d = docById(docId);
+      if (!d || d.demo) continue;
+      const reqs = state.reqs.filter(r => r.doc === docId);
+      const reviews = {};
+      reqs.forEach(r => { if (state.reviews[r.id]) reviews[r.id] = state.reviews[r.id]; });
+      const payload = {meta: {id:d.id, tier:d.tier, kind:d.kind, title:d.title, version:d.version,
+        publisher:d.publisher, date:d.date, lang:d.lang, status:d.status, file:d.file, warnings:d.warnings||[]},
+        blocks: d.blocks, requirements: reqs, reviews};
+      await ghPutFile("data/documents/" + docId + ".json", payload, "Update " + d.title);
+    }
+    await syncIndex();
+    if (state.anthropicKey || state.model !== "claude-sonnet-5"){
+      await ghPutFile("data/config.json", {anthropicKey: state.anthropicKey, model: state.model}, "Update config").catch(()=>{});
+    }
+    state.lastSync = nowISO(); state.connected = true; state.connError = "";
+  } catch(e){
+    state.connError = (e && e.message) || String(e);
+    ids.forEach(id => state.dirty.add(id));
+  } finally {
+    state.connecting = false; renderConn();
+  }
+}
+
+async function syncIndex(){
+  const entries = state.docs.filter(d => !d.demo).map(d => ({id:d.id, title:d.title, kind:d.kind, version:d.version, tier:d.tier, updatedAt: nowISO()}));
+  await ghPutFile("data/index.json", {documents: entries}, "Update index");
+}
+
+async function syncFromGitHub(){
+  if (!ghConfigured()) return;
+  state.connecting = true; renderConn();
+  try {
+    const cfg = await ghGetFile("data/config.json").catch(()=>({exists:false}));
+    if (cfg.exists && cfg.data){
+      if (cfg.data.anthropicKey && !state.anthropicKey) state.anthropicKey = cfg.data.anthropicKey;
+      if (cfg.data.model) state.model = cfg.data.model;
+      saveSettingsLocal();
+    }
+    const idx = await ghGetFile("data/index.json").catch(()=>({exists:false}));
+    if (idx.exists && idx.data && Array.isArray(idx.data.documents)){
+      for (const entry of idx.data.documents){
+        if (docById(entry.id)) continue;
+        const doc = await ghGetFile("data/documents/" + entry.id + ".json").catch(()=>({exists:false}));
+        if (!doc.exists || !doc.data) continue;
+        const m = doc.data.meta || {};
+        state.docs.push(Object.assign({}, m, {blocks: doc.data.blocks || []}));
+        (doc.data.requirements || []).forEach(r => { if (!byId(r.id)) state.reqs.push(r); });
+        Object.assign(state.reviews, doc.data.reviews || {});
+      }
+    }
+    state.connected = true; state.connError = ""; state.lastSync = nowISO();
+  } catch(e){
+    state.connected = false; state.connError = (e && e.message) || String(e);
+  } finally {
+    state.connecting = false; renderAll();
+  }
+}
+
+/* ============================ rendering: chrome ============================ */
+
+function renderProject(){
+  const c = [["Project",PROJECT.name],["Category",PROJECT.category],["Programme",PROJECT.operator],
+             ["Market",PROJECT.market],["EPD type",PROJECT.epdType],["Standards",PROJECT.standards],["Compiler",PROJECT.compiler]];
+  $("#projchips").innerHTML = c.map(([k,v]) => `<span class="pchip" title="${esc(k)}: ${esc(v)}"><i>${esc(k)}</i><b>${esc(v)}</b></span>`).join("");
+}
+
+function renderDocTabs(){
+  $("#doctabs").innerHTML = state.docs.map(d => {
+    const n = state.reqs.filter(r => r.doc === d.id).length;
+    return `<button class="doctab" data-doc="${esc(d.id)}" aria-pressed="${d.id===state.activeDoc}">
+      <b><span class="tier" title="Hierarchy level ${d.tier}">${d.tier}</span>${esc(d.title.length>34?d.title.slice(0,33)+"…":d.title)}${d.demo?'<span class="demo" title="Example corpus — never saved to GitHub">DEMO</span>':""}</b>
+      <span>v${esc(d.version)} · ${n} req</span></button>`;
+  }).join("");
+}
+
+function renderFilters(){
+  const counts = {};
+  visibleBase().forEach(r => { const o = effObligation(r); counts[o] = (counts[o]||0)+1; });
+  $("#filters").innerHTML = Object.entries(OBLIGATIONS)
+    .sort((a,b)=>a[1].order-b[1].order)
+    .filter(([k]) => counts[k])
+    .map(([k,v]) => `<button class="fchip" data-ob="${k}" aria-pressed="${state.obligationFilter.has(k)}" title="${esc(v.label)}">
+      <span class="tok ${k}" aria-hidden="true">${v.tok}</span>${esc(v.label)}<span class="n">${counts[k]}</span></button>`).join("");
+}
+
+function renderConn(){
+  const el = $("#connbadge"); if (!el) return;
+  let cls = "off", txt = "Not connected";
+  if (state.connecting) { cls = "dirty"; txt = "Syncing…"; }
+  else if (state.connError) { cls = "err"; txt = "Sync error"; }
+  else if (ghConfigured() && state.connected) { cls = state.dirty.size ? "dirty" : "on"; txt = state.dirty.size ? "Unsynced changes" : "Saved to " + state.gh.owner + "/" + state.gh.repo; }
+  else if (ghConfigured()) { cls = "dirty"; txt = "Connecting…"; }
+  el.className = "connbadge " + cls;
+  el.innerHTML = `<span class="dot"></span><span>${esc(txt)}</span> <a id="connLink">Settings</a>`;
+}
+
+function renderStrip(){
+  const all = state.reqs;
+  const n = s => all.filter(r => statusOf(r) === s).length;
+  const acc = n("accepted"), rej = n("rejected"), exp = n("expert"), pro = n("proposed");
+  const tot = all.length || 1;
+  const mapped = all.filter(r => effMapping(r)).length;
+  const dupes = all.filter(r => (r.related||[]).some(x => x.kind==="duplicate"||x.kind==="conflict")).length;
+  $("#strip").innerHTML =
+    `<span class="meter" role="img" aria-label="${acc} accepted, ${rej} rejected, ${exp} need expert review, ${pro} still proposed">
+       <i class="accepted" style="width:${acc/tot*100}%"></i><i class="rejected" style="width:${rej/tot*100}%"></i>
+       <i class="expert" style="width:${exp/tot*100}%"></i><i class="proposed" style="width:${pro/tot*100}%"></i></span>
+     <span><b>${all.length}</b> requirements</span><span class="sep">·</span>
+     <span><b>${pro}</b> proposed</span><span class="sep">·</span>
+     <span><b>${acc}</b> accepted</span><span class="sep">·</span>
+     <span><b>${rej}</b> rejected</span><span class="sep">·</span>
+     <span><b>${exp}</b> need expert review</span><span class="sep">·</span>
+     <span><b>${mapped}</b> with a proposed mapping</span><span class="sep">·</span>
+     <span><b>${dupes}</b> overlapping across documents</span>
+     <span class="spacer"></span>
+     <span id="connbadge" class="connbadge off"></span>`;
+  renderConn();
+}
+
+function visibleBase(){ return state.reqs.filter(r => r.doc === state.activeDoc); }
+
+function passes(r){
+  if (state.obligationFilter.size && !state.obligationFilter.has(effObligation(r))) return false;
+  const v = state.savedView, st = statusOf(r);
+  if (v === "unreviewed" && st !== "proposed") return false;
+  if (v === "mandatory" && effObligation(r) !== "mandatory") return false;
+  if (v === "nomap" && effMapping(r)) return false;
+  if (v === "lowconf" && !(r.confidence < 0.6)) return false;
+  if (v === "conflict" && !(r.related||[]).some(x => x.kind==="duplicate"||x.kind==="conflict")) return false;
+  if (v === "expert" && st !== "expert") return false;
+  if (v === "awaiting" && !(st === "accepted" && review(r.id).implStatus !== "implemented")) return false;
+  const q = state.query.trim().toLowerCase();
+  if (q){
+    const m = effMapping(r);
+    const hay = [r.id, r.clause, r.quote, effInterp(r), (r.categories||[]).join(" "), m && m.field, m && m.section, m && m.componentType].join(" ").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+function visible(){ return visibleBase().filter(passes); }
+
+/* ============================ source panel ============================ */
+
+function renderSource(){
+  const d = docById(state.activeDoc);
+  if (!d){ $("#srcBody").innerHTML = `<div class="empty"><b>No document selected</b></div>`; return; }
+  const shown = visible(); const shownIds = new Set(shown.map(r => r.id));
+  $("#srcCount").textContent = `${shown.length} of ${visibleBase().length} shown`;
+
+  let html = `<div class="srcmeta">
+    <div class="t">${esc(d.title)}</div>
+    <dl>
+      <dt>Type</dt><dd>${esc(d.kind)} · hierarchy level ${d.tier}</dd>
+      <dt>Version</dt><dd>${esc(d.version)}</dd>
+      <dt>Publisher</dt><dd>${esc(d.publisher)}</dd>
+      <dt>Date</dt><dd>${esc(d.date)}</dd>
+      <dt>Language</dt><dd>${esc(d.lang||"—")}</dd>
+      <dt>Status</dt><dd>${esc(d.status)}</dd>
+      <dt>File</dt><dd>${esc(d.file||"—")}</dd>
+    </dl>`;
+  if (d.demo) html += `<p class="caveat">Example document, quoted verbatim from the real published text with real clause and page references — bundled with this tool so the workspace isn't empty on first run. Never saved to your repository. Add your own documents with "Add document".</p>`;
+  if (d.warnings && d.warnings.length) html += `<p class="caveat"><b>${d.warnings.length} page(s) could not be processed:</b> ${esc(d.warnings.join(", "))}. Pages without a text layer need OCR, which this tool does not perform.</p>`;
+  html += `</div>`;
+
+  d.blocks.forEach((b, bi) => {
+    const here = state.reqs.filter(r => r.doc === d.id && (r.blockIndex === bi || (r.blockIndex == null && r.clause === b.clause && r.page === b.page)));
+    const spans = [];
+    here.forEach(r => { const loc = locate(b.text, r.quote); if (loc) spans.push({start:loc.start, end:loc.end, r}); });
+    spans.sort((a,x) => a.start - x.start || x.end - a.end);
+
+    let out = "", cur = 0;
+    spans.forEach(s => {
+      if (s.start < cur) return;
+      out += esc(b.text.slice(cur, s.start));
+      const ob = effObligation(s.r);
+      const dim = shownIds.has(s.r.id) ? "" : "opacity:.28;";
+      out += `<mark class="hl ${ob}" data-req="${esc(s.r.id)}" data-sel="${s.r.id===state.selected?1:0}" tabindex="0" role="button"
+        style="--fill:var(--hl-${ob});--edge:var(--hl-${ob}-edge);${dim}"
+        title="${esc(OBLIGATIONS[ob].label)} — ${esc(s.r.id)}">${esc(b.text.slice(s.start, s.end))}<sup>${esc(s.r.id)}</sup></mark>`;
+      cur = s.end;
+    });
+    out += esc(b.text.slice(cur));
+
+    const marks = here.map(r => {
+      const ob = effObligation(r), st = statusOf(r);
+      const rev = st==="accepted"?1:st==="rejected"?2:st==="expert"?3:0;
+      return `<span class="gmark ${ob}" data-req="${esc(r.id)}" data-rev="${rev}" role="button" tabindex="0"
+        style="background:var(--hl-${ob});border-color:var(--hl-${ob}-edge)" title="${esc(r.id)} — ${esc(OBLIGATIONS[ob].label)}, ${esc(st)}">${OBLIGATIONS[ob].tok}</span>`;
+    }).join("");
+
+    html += `<div class="block" id="blk-${bi}">
+      <div class="gutter"><span class="pg">p.${b.page}</span>${marks}</div>
+      <div class="btext">
+        <div class="blabel">${b.clause?`<b>${esc(b.clause)}</b>`:""}${b.heading?`<span>${esc(b.heading)}</span>`:""}</div>
+        <p>${out}</p>
+      </div></div>`;
+  });
+
+  const unlocated = state.reqs.filter(r => r.doc === d.id && r.blockIndex == null &&
+    !d.blocks.some((b,i) => (r.clause === b.clause && r.page === b.page) && locate(b.text, r.quote)));
+  if (unlocated.length){
+    html += `<div style="padding:11px 13px;border-top:2px solid var(--danger);background:var(--danger-soft)">
+      <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--danger);margin-bottom:5px">
+        ${unlocated.length} requirement(s) could not be located in the document text</div>
+      <p class="mini" style="margin:0 0 7px">The quote returned by the analysis does not appear verbatim in the extracted text, so it cannot be highlighted. Treat these as unreliable and check them against the source by hand.</p>
+      ${unlocated.map(r => `<div class="listrow" style="background:transparent;border-color:var(--rule)" data-req="${esc(r.id)}" role="button" tabindex="0">
+        <span class="rid">${esc(r.id)}</span><span class="rq">${esc(r.quote)}</span></div>`).join("")}
+    </div>`;
+  }
+
+  html += `<div class="selbar">Select any text above to raise a requirement the analysis missed.
+    <button class="btn sm" id="btnManual" disabled>Create requirement from selection</button></div>`;
+  $("#srcBody").innerHTML = html;
+}
+
+/* ============================ requirement panel ============================ */
+
+function renderReq(){
+  const r = byId(state.selected); const host = $("#reqBody");
+  if (!r){ $("#reqId").textContent=""; host.innerHTML = `<div class="empty"><b>No requirement selected</b>Pick a highlighted passage in the source panel.</div>`; return; }
+  const d = docById(r.doc), rv = review(r.id), st = statusOf(r), ob = effObligation(r);
+  $("#reqId").textContent = `${r.id} · ${r.source === "seed" ? "example" : "extracted " + (r.extractedAt ? fmtTime(r.extractedAt) : "")}`;
+
+  const rel = (r.related||[]).map(x => {
+    const o = byId(x.id); if (!o) return "";
+    const kindLabel = x.kind === "conflict" ? "Conflict risk" : x.kind === "duplicate" ? "Duplicate" : "Related";
+    return `<div class="relrow" data-goto="${esc(x.id)}"><span class="k ${esc(x.kind)}">${esc(kindLabel)}</span>
+      <span><b style="font-family:var(--mono);font-size:10.5px">${esc(o.id)}</b> ${esc(docById(o.doc).kind)} ${esc(o.clause)} — ${esc(o.quote.slice(0,84))}${o.quote.length>84?"…":""}</span></div>`;
+  }).join("");
+
+  const hist = (rv.history||[]).slice().reverse().map(h => `<li><time>${esc(fmtTime(h.at))}</time><span>${esc(h.by||"You")} — ${esc(h.what)}</span></li>`).join("");
+
+  host.innerHTML = `
+  <div class="zone">
+    <div class="zonehead"><span class="zonenum">1</span><h3>What the source says</h3><span class="tag verbatim">Verbatim · not editable</span></div>
+    <div class="zonebody">
+      <blockquote class="src">${esc(r.quote)}</blockquote>
+      <div class="srcref">
+        <span>${esc(d.kind)} ${esc(d.version)}</span>
+        <span>${r.clause ? "clause " + esc(r.clause) : "no clause number printed"}</span>
+        <a data-scroll="${esc(r.id)}">page ${esc(r.page)} ↗</a>
+        ${r.quoteVerified
+          ? `<span class="vquote yes" title="This string was found character-for-character in the extracted document text">✓ quote verified against source</span>`
+          : `<span class="vquote no" title="The analysis returned a quote that does not appear verbatim in the extracted text. Treat it as unreliable.">✕ quote not found in source</span>`}
+      </div>
+    </div>
+  </div>
+  <div class="zone">
+    <div class="zonehead"><span class="zonenum">2</span><h3>What this tool believes it means</h3><span class="tag ai">AI-generated · proposal</span></div>
+    <div class="zonebody">
+      <p class="interp" id="interp" contenteditable="true" spellcheck="false">${esc(effInterp(r))}</p>
+      <p class="rationale"><b>Why this passage was flagged:</b> ${esc(r.rationale||"—")}</p>
+      <dl class="grid">
+        <dt>Obligation</dt><dd><select id="obSel" style="padding:3px 6px;border:1px solid var(--rule-2);border-radius:4px;background:var(--panel)">
+          ${Object.entries(OBLIGATIONS).sort((a,b)=>a[1].order-b[1].order).map(([k,v])=>`<option value="${k}" ${k===ob?"selected":""}>${esc(v.label)}</option>`).join("")}
+        </select></dd>
+        <dt>Categories</dt><dd><div class="cats">${(r.categories||[]).map(c=>`<span class="cat">${esc(c)}</span>`).join("")||"—"}</div></dd>
+        <dt>EPD section</dt><dd>${esc(r.epdSection||"—")}</dd>
+        <dt>Applicability</dt><dd>${esc(r.applicability||"Applies unconditionally")}</dd>
+        <dt>Scope</dt><dd>${esc(PROJECT.category)} · ${esc(PROJECT.market)}</dd>
+        <dt>Confidence</dt><dd><span class="conf"><span class="confbar"><i class="${r.confidence<0.6?"low":""}" style="width:${Math.round((r.confidence||0)*100)}%"></i></span>
+          <span style="font-family:var(--mono);font-size:11px">${(r.confidence||0).toFixed(2)}</span>
+          ${r.confidence<0.6?`<span style="color:var(--warn);font-size:11px">low — review closely</span>`:""}</span></dd>
+      </dl>
+      ${rel ? `<div class="rel"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600">Related requirements</div>${rel}</div>` : ""}
+    </div>
+  </div>
+  <div class="zone">
+    <div class="zonehead"><span class="zonenum">3</span><h3>What you have approved</h3></div>
+    <div class="zonebody">
+      <div class="decis">
+        <button class="btn sm ok" data-act="accept">Accept</button>
+        <button class="btn sm no" data-act="reject">Reject</button>
+        <button class="btn sm" data-act="expert">Needs expert interpretation</button>
+        <button class="btn sm" data-act="split">Split</button>
+        <button class="btn sm" data-act="merge">Merge…</button>
+        <button class="btn sm ghost" data-act="reset">Reset to proposed</button>
+      </div>
+      <div class="statusline ${st==="proposed"?"":esc(st)}">
+        <span class="sdot"></span>
+        <b>${st==="proposed"?"Proposed — not approved":st==="accepted"?"Accepted":st==="rejected"?"Rejected":"Flagged for expert interpretation"}</b>
+        ${rv.at?`<span style="color:var(--ink-3)">${esc(rv.by||"You")} · ${esc(fmtTime(rv.at))}</span>`:`<span style="color:var(--ink-3)">No decision recorded. This proposal is not a compiler requirement.</span>`}
+      </div>
+      ${rv.note?`<p class="mini" style="margin-top:8px">${esc(rv.note)}</p>`:""}
+      <div class="hist">
+        <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;margin-bottom:5px">Change history</div>
+        ${hist?`<ol>${hist}</ol>`:`<p class="mini">No changes yet. Every edit and decision is recorded here.</p>`}
+      </div>
+    </div>
+  </div>`;
+
+  const ip = $("#interp");
+  if (ip && r.source !== "seed") ip.addEventListener("blur", () => { const txt = ip.textContent.trim(); if (txt && txt !== effInterp(r)) saveReview(r.id, {interpretation:txt}, "edited the interpretation"); });
+  else if (ip) ip.setAttribute("contenteditable","false");
+  const os = $("#obSel");
+  if (os) os.addEventListener("change", () => saveReview(r.id, {obligation:os.value}, `changed the obligation level to ${OBLIGATIONS[os.value].label.toLowerCase()}`));
+}
+
+/* ============================ mapping panel ============================ */
+
+function preview(m){
+  const t = m.componentType, label = esc(m.field||"Field");
+  const req = m.required === true ? `<span class="req-star" title="Required">*</span>` : m.required === "conditional" ? `<span style="color:var(--warn);font-family:var(--mono);font-size:9px">COND</span>` : "";
+  const head = `<div class="pvlabel">${label} ${req}</div>${m.helpText?`<div class="pvhelp">${esc(m.helpText)}</div>`:""}`;
+  const opts = (m.allowedValues||[]).map(v=>`<option>${esc(v)}</option>`).join("");
+  let body;
+  switch(t){
+    case "unit-number": body = `<div class="unitrow"><input type="text" value="" placeholder="0.00" disabled><select disabled>${opts||"<option>unit</option>"}</select></div>`; break;
+    case "select": body = `<select disabled><option>Select…</option>${opts}</select>`; break;
+    case "radio": body = (m.allowedValues||["Option A","Option B"]).map(v=>`<div class="chkrow"><input type="radio" disabled ${v===m.defaultValue?"checked":""}><span>${esc(v)}</span></div>`).join(""); break;
+    case "multiselect": body = (m.allowedValues||[]).slice(0,5).map(v=>`<div class="chkrow"><input type="checkbox" disabled ${String(m.defaultValue||"").includes(v)?"checked":""}><span>${esc(v)}</span></div>`).join("") + ((m.allowedValues||[]).length>5?`<div class="pvhelp">+ ${(m.allowedValues.length-5)} more</div>`:""); break;
+    case "checkbox": case "boolean": body = `<div class="chkrow"><input type="checkbox" disabled><span>${esc(m.defaultValue||"Yes")}</span></div>`; break;
+    case "textarea": body = `<textarea rows="3" disabled placeholder="…"></textarea>`; break;
+    case "richtext": body = `<div style="border:1px solid var(--rule-2);border-radius:4px;overflow:hidden"><div style="display:flex;gap:6px;padding:3px 6px;background:var(--panel-2);border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:10px;color:var(--ink-3)">B　I　•　1.　🔗</div><textarea rows="3" disabled style="border:0;border-radius:0"></textarea></div>`; break;
+    case "percentage": body = `<div class="unitrow"><input type="text" disabled placeholder="0.0"><select disabled><option>%</option></select></div>`; break;
+    case "integer": case "decimal": body = `<input type="text" disabled placeholder="${t==="integer"?"0":"0.00"}">`; break;
+    case "date": body = `<input type="text" disabled placeholder="YYYY-MM-DD">`; break;
+    case "file": body = `<div class="filebox">Drop a file, or browse<br><span style="font-family:var(--mono);font-size:10px">${esc((m.allowedValues||["any type"]).join(", "))}</span></div>`; break;
+    case "reference": body = `<select disabled><option>Search the programme register…</option></select><div class="pvhelp" style="margin:5px 0 0">Bound to an external register — free text is not accepted.</div>`; break;
+    case "dataset": body = `<select disabled><option>Select a background dataset…</option></select>`; break;
+    case "calculated": body = `<div class="ro" style="font-family:var(--mono);font-size:11px">${esc(m.calculation||"computed")}</div><div class="pvhelp" style="margin:5px 0 0">Read-only. Recalculated whenever an input changes.</div>`; break;
+    case "readonly": body = `<div class="ro">${esc(m.defaultValue||"Generated text")}</div>`; break;
+    case "notice": body = `<div class="notice">${esc(m.defaultValue||m.helpText||"Information message")}</div>`; break;
+    case "attestation": body = `<div class="chkrow"><input type="checkbox" disabled><span>I confirm the above is correct</span></div>`; break;
+    case "module-matrix":
+      body = `<div class="tblwrap"><table class="matrix"><thead><tr><th>Module</th>${MODULES.map(m2=>`<th class="mod">${m2}</th>`).join("")}</tr></thead>
+        <tbody><tr><td>Declared</td>${MODULES.map(m2=>{ const mand = ["A1","A2","A3","C1","C2","C3","C4","D"].includes(m2); return `<td class="cell ${mand?"":"mnd"}">${mand?"X":"MND"}</td>`;}).join("")}</tr></tbody></table></div>
+        <div class="pvhelp" style="margin:6px 0 0">X = declared · MND = module not declared · MNR = module not relevant</div>`; break;
+    case "indicator-table":
+      body = `<div class="tblwrap"><table><thead><tr><th>Indicator</th><th>Unit</th><th>A1–A3</th><th>C1–C4</th><th>D</th></tr></thead><tbody>
+        <tr><td>GWP-total</td><td>kg CO₂ eq</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>GWP-fossil</td><td>kg CO₂ eq</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>ODP</td><td>kg CFC 11 eq</td><td>—</td><td>—</td><td>—</td></tr></tbody></table></div>`; break;
+    case "table": case "repeatable":
+      body = `<div class="tblwrap"><table><thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Source</th></tr></thead>
+        <tbody><tr><td>—</td><td>—</td><td>—</td><td>—</td></tr></tbody></table></div>
+        ${t==="repeatable"?`<div class="pvhelp" style="margin:6px 0 0">+ Add row — one row ${esc(m.repeatability||"per entry")}</div>`:""}`; break;
+    case "conditional":
+      body = `<div style="border-left:3px solid var(--hl-conditional-edge);padding-left:9px"><div class="pvhelp" style="margin:0 0 5px">Shown only when the applicability condition is met</div>
+        ${(m.allowedValues||["Section content"]).slice(0,10).map(v=>`<div style="font-size:11.5px;color:var(--ink-2)">▸ ${esc(v)}</div>`).join("")}</div>`; break;
+    default: body = `<input type="text" disabled placeholder="…">`;
+  }
+  return `<div class="preview"><div class="pv">${head}${body}</div></div>`;
+}
+
+function whyComponent(m){
+  const reasons = {
+    "unit-number":"The clause ties a quantity to a unit, and the unit is itself constrained — a plain number field would let the two drift apart.",
+    "radio":"The source offers a small, closed set of mutually exclusive choices, and the order of the options carries meaning that a dropdown would hide.",
+    "select":"A closed list of admissible values, short enough to pick from but too long to show as radio buttons.",
+    "multiselect":"More than one value can apply at once, and the admissible values are enumerated in the source.",
+    "module-matrix":"The requirement is stated per life-cycle module, so the component has to carry all seventeen modules and their declared/not-declared state together.",
+    "indicator-table":"The requirement applies per environmental indicator, which means one row per indicator rather than one aggregate figure.",
+    "repeatable":"The number of entries is not known in advance — it follows from what the practitioner declares — so the component must grow.",
+    "table":"Several related values have to be read together; separate fields would lose the relationship.",
+    "calculated":"The compiler already holds every input, so asking a person to compute and type the answer only introduces error.",
+    "readonly":"The wording is prescribed by the source document, so it should be generated rather than typed.",
+    "file":"The deliverable is a document that lives outside the EPD; the compiler's job is to require and hold the evidence.",
+    "reference":"The source names an approved population, so the value must resolve against a register rather than be typed freely.",
+    "textarea":"A reasoned justification is required, which needs room and does not fit a controlled vocabulary.",
+    "percentage":"The value is a share against a threshold stated in the source, so the unit is fixed and the range is bounded.",
+    "integer":"A whole-number value compared against a numeric limit the compiler can evaluate itself.",
+    "conditional":"The requirement governs whether a whole group of fields applies, not a single value.",
+    "notice":"The requirement is guidance for the person filling in the EPD rather than a value to be captured.",
+    "attestation":"The requirement is a confirmation by a named person, which needs to be recorded with who and when.",
+    "boolean":"A yes/no fact that other rules branch on.", "date":"A point in time the compiler compares against validity and publication dates.",
+    "decimal":"A continuous quantity compared against a numeric threshold.", "richtext":"Text that will be published and read, needing structure but not arbitrary markup.",
+    "dataset":"The value must resolve to a specific dataset and version so a verifier can reproduce it.", "checkbox":"A single binary confirmation."
+  };
+  return reasons[m.componentType] || "Chosen to match the shape of the value the clause asks for.";
+}
+
+function renderMap(){
+  const r = byId(state.selected), host = $("#mapBody");
+  if (!r){ $("#mapStatus").textContent=""; host.innerHTML = `<div class="empty"><b>Nothing selected</b></div>`; return; }
+  const m = effMapping(r), rv = review(r.id), d = docById(r.doc);
+
+  if (!m){
+    $("#mapStatus").textContent = "no mapping proposed";
+    host.innerHTML = `<div class="empty"><b>No compiler mapping proposed</b>
+      ${r.needsExpert ? "This requirement was flagged as needing expert interpretation before it can be mapped."
+                      : "The analysis did not find an implementable field for this passage."}
+      <div style="margin-top:14px"><button class="btn sm" data-act="mapnew">Create a mapping by hand</button></div></div>`;
+    return;
+  }
+
+  $("#mapStatus").textContent = (rv.implStatus || "not implemented");
+  const impl = rv.implStatus || "not-implemented";
+  const editable = r.source !== "seed";
+
+  host.innerHTML = `<div class="mapcard">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:11px">
+      <span class="ctype">${esc(COMPONENTS[m.componentType]?COMPONENTS[m.componentType].label:m.componentType)}</span>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">${esc(m.section)}</span>
+      ${m.required===true?`<span class="cat" style="border-color:var(--danger);color:var(--danger)">Required</span>`:
+        m.required==="conditional"?`<span class="cat" style="border-color:var(--warn);color:var(--warn)">Conditionally required</span>`:`<span class="cat">Optional</span>`}
+    </div>
+    <p class="why">${esc(whyComponent(m))}</p>
+    ${preview(m)}
+    <div class="two" style="margin-top:14px">
+      <div class="fieldrow"><label for="fSection">Compiler section</label><input id="fSection" type="text" value="${esc(m.section||"")}" ${editable?"":"disabled"}></div>
+      <div class="fieldrow"><label for="fField">Field name</label><input id="fField" type="text" value="${esc(m.field||"")}" ${editable?"":"disabled"}></div>
+    </div>
+    <div class="fieldrow"><label for="fHelp">Help text shown to the compiler user</label><textarea id="fHelp" ${editable?"":"disabled"}>${esc(m.helpText||"")}</textarea></div>
+    <div class="two">
+      <div class="fieldrow"><label for="fType">Component type</label>
+        <select id="fType" ${editable?"":"disabled"}>${Object.entries(COMPONENTS).map(([k,v])=>`<option value="${k}" ${k===m.componentType?"selected":""}>${esc(v.label)}</option>`).join("")}</select></div>
+      <div class="fieldrow"><label for="fReq">Required</label>
+        <select id="fReq" ${editable?"":"disabled"}>
+          <option value="true" ${m.required===true?"selected":""}>Required</option>
+          <option value="conditional" ${m.required==="conditional"?"selected":""}>Conditionally required</option>
+          <option value="false" ${m.required===false?"selected":""}>Optional</option>
+        </select></div>
+      <div class="fieldrow"><label for="fUnit">Unit</label><input id="fUnit" type="text" value="${esc(m.unit||"")}" placeholder="—" ${editable?"":"disabled"}></div>
+      <div class="fieldrow"><label for="fRepeat">Repeatability</label><input id="fRepeat" type="text" value="${esc(m.repeatability||"single")}" ${editable?"":"disabled"}></div>
+    </div>
+    ${r.applicability?`<div class="applic"><b>Applicability condition</b>${esc(r.applicability)}<div class="mini" style="margin-top:5px">Editable as a readable rule — no code required.</div></div>`:""}
+    ${m.calculation?`<div class="fieldrow" style="margin-top:12px"><label>Calculation rule</label><div class="vrule"><code>${esc(m.calculation)}</code></div></div>`:""}
+    <div class="fieldrow" style="margin-top:12px"><label>Proposed validation rules</label>
+      <div class="vlist">${(m.validations||[]).map(v=>`<div class="vrule"><code>${esc(v.rule)}</code><small>${esc(v.why)}</small></div>`).join("") || `<div class="mini">None proposed.</div>`}</div></div>
+    ${m.allowedValues?`<div class="fieldrow"><label>Allowed values</label><div class="mini" style="font-family:var(--mono)">${m.allowedValues.map(v=>esc(v)).join(" · ")}</div></div>`:""}
+    ${m.devNotes?`<div class="fieldrow"><label>Notes for the compiler developer</label><div class="mini">${esc(m.devNotes)}</div></div>`:""}
+    <div class="implrow">
+      <label for="fImpl" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600">Implementation status</label>
+      <select id="fImpl" style="padding:4px 8px;border:1px solid var(--rule-2);border-radius:4px;background:var(--panel)">
+        ${["not-implemented","specified","in-development","implemented","verified"].map(s=>`<option value="${s}" ${s===impl?"selected":""}>${s.replace(/-/g," ")}</option>`).join("")}
+      </select>
+      <div class="spacer"></div>
+      <button class="btn sm ok" data-act="mapaccept">Accept mapping</button>
+      <button class="btn sm no" data-act="mapreject">Reject mapping</button>
+    </div>
+    <div class="sectrail">
+      Source reference carried into the compiler:<br>
+      <a data-scroll="${esc(r.id)}">${esc(d.kind)} ${esc(d.title)} v${esc(d.version)}${r.clause?", clause "+esc(r.clause):""}, p.${esc(r.page)}</a><br>
+      Requirement <b>${esc(r.id)}</b> · extraction ${esc(r.extractedAt?fmtTime(r.extractedAt):"example corpus")} · analysis version 0.1
+    </div>
+  </div>`;
+
+  if (editable){
+    ["fSection","fField","fHelp","fUnit","fRepeat"].forEach(id => {
+      const el = $("#"+id); if (!el) return;
+      el.addEventListener("change", () => {
+        const nm = Object.assign({}, effMapping(r));
+        nm[{fSection:"section",fField:"field",fHelp:"helpText",fUnit:"unit",fRepeat:"repeatability"}[id]] = el.value;
+        saveReview(r.id, {mapping:nm}, `edited the compiler mapping (${el.previousElementSibling.textContent.toLowerCase()})`);
+      });
+    });
+    const ft = $("#fType");
+    if (ft) ft.addEventListener("change", () => { const nm = Object.assign({}, effMapping(r)); nm.componentType = ft.value; saveReview(r.id, {mapping:nm}, `changed the component type to ${COMPONENTS[ft.value].label.toLowerCase()}`); });
+    const fr = $("#fReq");
+    if (fr) fr.addEventListener("change", () => { const nm = Object.assign({}, effMapping(r)); nm.required = fr.value === "true" ? true : fr.value === "false" ? false : "conditional"; saveReview(r.id, {mapping:nm}, `set the field to ${fr.selectedOptions[0].textContent.toLowerCase()}`); });
+  }
+  const fi = $("#fImpl");
+  if (fi) fi.addEventListener("change", () => saveReview(r.id, {implStatus:fi.value}, `set implementation status to ${fi.value.replace(/-/g," ")}`));
+}
+
+/* ============================ review persistence ============================ */
+
+function saveReview(id, patch, what){
+  const prev = state.reviews[id] || {status:"proposed", history:[]};
+  const next = Object.assign({}, prev, patch);
+  next.history = (prev.history||[]).concat([{at:nowISO(), by:state.me.name || "You", what:what}]);
+  next.at = nowISO(); next.by = state.me.name || "You";
+  state.reviews[id] = next;
+  renderAll();
+  const r = byId(id); if (r) scheduleSync(r.doc);
+}
+
+function act(action){
+  const r = byId(state.selected); if (!r) return;
+  if (action === "accept") saveReview(r.id, {status:"accepted"}, "accepted the requirement");
+  else if (action === "reject") saveReview(r.id, {status:"rejected"}, "rejected the requirement as not applicable");
+  else if (action === "expert") saveReview(r.id, {status:"expert"}, "flagged the requirement for expert interpretation");
+  else if (action === "reset") saveReview(r.id, {status:"proposed"}, "returned the requirement to proposed");
+  else if (action === "mapaccept") saveReview(r.id, {mapStatus:"accepted", implStatus: review(r.id).implStatus || "specified"}, "accepted the compiler mapping");
+  else if (action === "mapreject") saveReview(r.id, {mapStatus:"rejected"}, "rejected the compiler mapping");
+  else if (action === "split") splitReq(r);
+  else if (action === "merge") openMerge(r);
+  else if (action === "mapnew") createMapping(r);
+}
+
+function splitReq(r){
+  if (r.source === "seed"){ alert("The example corpus is read-only. Add your own document to try split and merge."); return; }
+  const n = state.reqs.filter(x => x.id.startsWith(r.id + ".")).length + 1;
+  const copy = JSON.parse(JSON.stringify(r));
+  copy.id = r.id + "." + n; copy.source = "split";
+  copy.interpretation = "Split from " + r.id + ". Narrow this interpretation to the part of the clause it covers.";
+  copy.related = [{id:r.id, kind:"pair"}];
+  state.reqs.push(copy);
+  r.related = (r.related||[]).concat([{id:copy.id, kind:"pair"}]);
+  saveReview(copy.id, {status:"proposed"}, "created by splitting " + r.id);
+  state.selected = copy.id; renderAll(); scheduleSync(r.doc);
+}
+
+function openMerge(r){
+  if (r.source === "seed"){ alert("The example corpus is read-only. Add your own document to try split and merge."); return; }
+  const others = visibleBase().filter(x => x.id !== r.id);
+  $("#mergeTitle").textContent = "Merge " + r.id + " into…";
+  $("#mergeBody").innerHTML = `<p class="mini" style="margin-top:0">The merged requirement keeps both source references. Neither original quote is discarded.</p>` +
+    others.map(o => `<div class="listrow" data-merge="${esc(o.id)}"><span class="rid">${esc(o.id)}</span><span class="rq">${esc(o.quote)}</span></div>`).join("");
+  $("#dlgMerge").showModal();
+}
+
+function doMerge(intoId){
+  const r = byId(state.selected), t = byId(intoId); if (!r || !t) return;
+  t.mergedFrom = (t.mergedFrom||[]).concat([{id:r.id, quote:r.quote, clause:r.clause, page:r.page, doc:r.doc}]);
+  t.related = (t.related||[]).concat([{id:r.id, kind:"pair"}]);
+  saveReview(t.id, {}, "merged " + r.id + " into this requirement");
+  saveReview(r.id, {status:"rejected", note:"Merged into " + t.id + ". The quote and source reference are preserved on that record."}, "merged into " + t.id);
+  state.selected = t.id; $("#dlgMerge").close(); renderAll(); scheduleSync(r.doc); scheduleSync(t.doc);
+}
+
+function createMapping(r){
+  if (r.source === "seed"){ alert("The example corpus is read-only."); return; }
+  const m = {section:"LCA information", field:r.epdSection ? r.epdSection.split("→").pop().trim() : "New field",
+    componentType:"text", required:true, helpText:"", unit:null, allowedValues:null,
+    repeatability:"single", calculation:null, defaultValue:null, devNotes:"Created by hand during review.",
+    validations:[{rule:"required(field)", why:"Added by the reviewer."}]};
+  saveReview(r.id, {mapping:m}, "created a compiler mapping by hand");
+}
+
+/* ============================ manual requirement from selection ============================ */
+
+function selectionHandler(){
+  const sel = window.getSelection(); const btn = $("#btnManual"); if (!btn) return;
+  const txt = sel && sel.toString().trim();
+  const inSrc = sel && sel.anchorNode && $("#srcBody").contains(sel.anchorNode);
+  const activeIsDemo = (docById(state.activeDoc)||{}).demo;
+  btn.disabled = !(txt && txt.length > 15 && inSrc) || activeIsDemo;
+  btn.title = activeIsDemo ? "The example corpus is read-only. Add your own document to try this." : "";
+  btn.dataset.text = txt || "";
+  if (!btn.dataset.bound){
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      const quote = btn.dataset.text; if (!quote) return;
+      const d = docById(state.activeDoc);
+      let bi = -1; d.blocks.forEach((b,i) => { if (bi<0 && locate(b.text, quote)) bi = i; });
+      if (bi < 0) return;
+      const id = "R-M" + String(state.reqs.filter(x=>x.source==="manual").length+1).padStart(2,"0") + "-" + uid();
+      state.reqs.push({id, doc:d.id, clause:d.blocks[bi].clause, page:d.blocks[bi].page, blockIndex:bi,
+        quote, obligation:"unclear", categories:[], epdSection:"", applicability:null,
+        interpretation:"Raised by hand during review. Write the interpretation here.",
+        rationale:"Added by a reviewer, not by the analysis.", confidence:1, related:[],
+        source:"manual", quoteVerified:true, compiler:null});
+      saveReview(id, {status:"proposed"}, "raised this requirement by hand from a text selection");
+      state.selected = id; renderAll(); scheduleSync(d.id);
+    });
+  }
+}
+
+/* ============================ Anthropic extraction ============================ */
+
+const CATLIST = CATEGORIES.join(", ");
+const COMPLIST = Object.keys(COMPONENTS).join(", ");
+
+function buildPrompt(doc, chunk){
+  return `You are extracting EPD-relevant requirements from a programme document for review by a life-cycle assessment expert. This is compliance work: recall matters more than precision. It is better to surface a borderline passage for a human to dismiss than to omit a mandatory requirement.
+
+DOCUMENT: ${doc.title} — ${doc.kind}, version ${doc.version}, published by ${doc.publisher}.
+PROJECT CONTEXT: ${PROJECT.category}; market ${PROJECT.market}; ${PROJECT.epdType}; standards ${PROJECT.standards}.
+
+The document text follows between the markers. Page breaks are marked [[page N]].
+---BEGIN---
+${chunk}
+---END---
+
+Return ONLY a JSON array, one object per requirement found, and nothing else — no preamble, no markdown fence, no closing remarks:
+[{"quote": string, "page": number, "clause": string|null, "obligation": string, "categories": [string],
+ "epdSection": string, "applicability": string|null, "interpretation": string, "rationale": string,
+ "confidence": number,
+ "compiler": {"section": string, "field": string, "helpText": string, "componentType": string,
+   "required": true|false|"conditional", "unit": string|null, "allowedValues": [string]|null,
+   "repeatability": string, "calculation": string|null, "defaultValue": string|null, "devNotes": string|null,
+   "validations": [{"rule": string, "why": string}]} | null}]
+
+Hard rules:
+- "quote" must be a contiguous substring copied CHARACTER FOR CHARACTER from the text above, between 20 and 300 characters, containing the obligation wording. Never paraphrase it, never join two separated sentences, never fix its typography.
+- "clause" must be the clause or section number exactly as printed in the text. If no clause number is printed near the passage, use null. NEVER invent or infer a clause number.
+- "page" is the number from the nearest preceding [[page N]] marker.
+- "obligation" is one of: mandatory, prohibited, conditional, recommended, optional, informational, unclear.
+- "categories": one to three of: ${CATLIST}
+- "componentType" is one of: ${COMPLIST}
+- "interpretation" is 1-3 sentences of plain language, clearly your reading rather than the source's words.
+- "rationale" is one sentence on why this passage was flagged.
+- If the obligation level is not clear from the wording, use "unclear" with confidence at most 0.4 and set "compiler" to null rather than guessing a field.
+- If a passage states no implementable requirement for an EPD or its compiler, leave it out.
+
+Output the JSON array and nothing else.`;
+}
+
+function parseJsonLoose(text){
+  if (!text) throw new Error("Empty response");
+  try { return JSON.parse(text); } catch(e){}
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) { try { return JSON.parse(fence[1]); } catch(e){} }
+  const s = text.indexOf("["), en = text.lastIndexOf("]");
+  if (s >= 0 && en > s) { try { return JSON.parse(text.slice(s, en+1)); } catch(e){} }
+  const s2 = text.indexOf("{"), en2 = text.lastIndexOf("}");
+  if (s2 >= 0 && en2 > s2) { try { return JSON.parse(text.slice(s2, en2+1)); } catch(e){} }
+  throw new Error("Could not parse a JSON value from the response");
+}
+
+async function callClaude(prompt, signal){
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST", signal,
+    headers:{
+      "content-type":"application/json", "x-api-key": state.anthropicKey,
+      "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body: JSON.stringify({model: state.model || "claude-sonnet-5", max_tokens: 4096, messages:[{role:"user", content:prompt}]})
+  });
+  if (!res.ok){
+    let msg = "HTTP " + res.status;
+    try { const j = await res.json(); if (j && j.error && j.error.message) msg = j.error.message; } catch(e){}
+    if (res.status === 401) msg = "API key rejected. Check it in Settings.";
+    if (res.status === 429) msg = "Rate limited by the API. Wait a moment and try again.";
+    throw Object.assign(new Error(msg), {status: res.status});
+  }
+  const json = await res.json();
+  const block = (json.content||[]).find(b => b.type === "text");
+  if (!block || !block.text) throw new Error("The model returned no text.");
+  return block.text;
+}
+
+const dlgAdd = () => $("#dlgAdd");
+let abortCtl = null, ingestMode = "pdf";
+
+function logLine(s){ const l = $("#log"); const d = document.createElement("div"); d.textContent = s; l.appendChild(d); l.scrollTop = l.scrollHeight; }
+
+async function readPdf(file){
+  logLine("Reading " + file.name + " …");
+  if (typeof pdfjsLib === "undefined") throw new Error("The PDF reader did not load. Check your connection, or use the paste tab instead.");
+  try { pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; } catch(e){}
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const pages = [], empties = [];
+  for (let i=1;i<=pdf.numPages;i++){
+    const p = await pdf.getPage(i);
+    const tc = await p.getTextContent();
+    const txt = tc.items.map(it => it.str).join(" ").replace(/\s+/g," ").trim();
+    if (!txt) empties.push(String(i));
+    pages.push({n:i, text:txt});
+    if (i % 12 === 0 || i === pdf.numPages){ logLine(`Extracted text from page ${i} of ${pdf.numPages}`); $("#prog").firstElementChild.style.width = Math.round(i/pdf.numPages*35) + "%"; }
+  }
+  if (empties.length) logLine(`${empties.length} page(s) carry no text layer: ${empties.slice(0,20).join(", ")}${empties.length>20?"…":""}`);
+  return {pages, empties};
+}
+
+function parsePasted(text){
+  const pages = []; let cur = {n:1, text:""};
+  text.split(/\r?\n/).forEach(line => {
+    const m = line.match(/^\s*\[\[\s*page\s+(\d+)\s*\]\]\s*$/i);
+    if (m){ if (cur.text.trim()) pages.push(cur); cur = {n:parseInt(m[1],10), text:""}; }
+    else cur.text += line + "\n";
+  });
+  if (cur.text.trim()) pages.push(cur);
+  return {pages: pages.map(p => ({n:p.n, text:p.text.replace(/\s+/g," ").trim()})), empties:[]};
+}
+
+function chunkPages(pages, maxChars){
+  const out = []; let cur = "", first = null;
+  pages.forEach(p => {
+    const piece = `[[page ${p.n}]] ${p.text}\n`;
+    if (cur.length + piece.length > maxChars && cur){ out.push({text:cur, from:first, to:p.n-1}); cur = ""; first = null; }
+    if (first == null) first = p.n; cur += piece;
+  });
+  if (cur.trim()) out.push({text:cur, from:first, to:pages[pages.length-1].n});
+  return out;
+}
+
+async function runExtraction(){
+  if (!state.anthropicKey){ logLine("No Anthropic API key saved. Open Settings and add one first."); return; }
+  const title = $("#mTitle").value.trim() || (ingestMode === "pdf" ? "Uploaded document" : "Pasted extract");
+
+  $("#log").innerHTML = ""; $("#prog").hidden = false; $("#prog").firstElementChild.style.width = "0%";
+  $("#btnRun").disabled = true; $("#btnStop").hidden = false;
+
+  let src;
+  try {
+    if (ingestMode === "pdf"){
+      const f = $("#file").files[0];
+      if (!f){ logLine("Choose a PDF first."); $("#btnRun").disabled=false; $("#btnStop").hidden=true; return; }
+      src = await readPdf(f);
+    } else {
+      const t = $("#paste").value;
+      if (t.trim().length < 40){ logLine("Paste some clause text first."); $("#btnRun").disabled=false; $("#btnStop").hidden=true; return; }
+      src = parsePasted(t);
+    }
+  } catch(e){
+    logLine("Could not read the document: " + (e && e.message ? e.message : String(e)));
+    $("#btnRun").disabled = false; $("#btnStop").hidden = true; return;
+  }
+
+  const docId = "up" + Date.now().toString(36);
+  const doc = {id:docId, tier:5, kind:$("#mType").value, title,
+    version:$("#mVer").value.trim() || "—", publisher:$("#mPub").value.trim() || "—",
+    date:new Date().toISOString().slice(0,10), lang:"en", status:"Uploaded for analysis",
+    file: ingestMode==="pdf" ? ($("#file").files[0]||{}).name : "pasted text",
+    demo:false, warnings:src.empties, blocks:src.pages.map(p => ({page:p.n, clause:null, heading:"Page "+p.n, text:p.text}))};
+
+  const chunks = chunkPages(src.pages, 14000).slice(0, 8);
+  logLine(`Analysing ${chunks.length} section(s) of the document. Each is a separate call to the Anthropic API using your key.`);
+
+  abortCtl = new AbortController();
+  const found = []; let n = 0;
+  for (const ch of chunks){
+    n++;
+    logLine(`Section ${n} of ${chunks.length} — pages ${ch.from}–${ch.to} …`);
+    try {
+      const text = await callClaude(buildPrompt(doc, ch.text), abortCtl.signal);
+      const arr = parseJsonLoose(text);
+      const list = Array.isArray(arr) ? arr : [];
+      list.forEach(item => {
+        if (!item || typeof item.quote !== "string") return;
+        const page = Number(item.page) || ch.from;
+        let bi = doc.blocks.findIndex(b => b.page === page && locate(b.text, item.quote));
+        let verified = bi >= 0;
+        if (bi < 0) bi = doc.blocks.findIndex(b => locate(b.text, item.quote));
+        if (bi >= 0 && !verified) verified = true;
+        const id = "R-" + String(found.length + 1).padStart(3,"0") + "-" + docId.slice(-4);
+        found.push({
+          id, doc:docId, clause: item.clause || null, page: bi>=0 ? doc.blocks[bi].page : page,
+          blockIndex: bi >= 0 ? bi : null, quote: item.quote,
+          obligation: OBLIGATIONS[item.obligation] ? item.obligation : "unclear",
+          categories: Array.isArray(item.categories) ? item.categories.slice(0,3) : [],
+          epdSection: item.epdSection || "", applicability: item.applicability || null,
+          interpretation: item.interpretation || "", rationale: item.rationale || "",
+          confidence: verified ? Math.max(0, Math.min(1, Number(item.confidence) || 0.5)) : 0.2,
+          related: [], source:"extracted", extractedAt: nowISO(),
+          quoteVerified: verified, needsExpert: item.obligation === "unclear",
+          compiler: item.compiler && item.compiler.field ? item.compiler : null
+        });
+      });
+      logLine(`  → ${list.length} passage(s) proposed`);
+    } catch(e){
+      if (e && e.name === "AbortError"){ logLine("Stopped."); break; }
+      logLine("  → section failed: " + ((e && e.message) || String(e)));
+      if (e && (e.status === 401)) break;
+    }
+    $("#prog").firstElementChild.style.width = (35 + Math.round(n/chunks.length*65)) + "%";
+  }
+
+  const unverified = found.filter(f => !f.quoteVerified).length;
+  logLine(`Done. ${found.length} proposed requirement(s)${unverified?`, of which ${unverified} carry a quote that could not be matched against the document text and are flagged`:""}.`);
+
+  if (found.length){
+    state.docs.push(doc);
+    found.forEach(f => state.reqs.push(f));
+    state.activeDoc = docId; state.selected = found[0].id;
+    scheduleSync(docId);
+    renderAll();
+    setTimeout(() => dlgAdd().close(), 900);
+  }
+  $("#btnRun").disabled = false; $("#btnStop").hidden = true; abortCtl = null;
+}
+
+/* ============================ export / import ============================ */
+
+function exportRows(){
+  return state.reqs.map(r => {
+    const d = docById(r.doc), m = effMapping(r), rv = review(r.id);
+    return {
+      requirementId: r.id, sourceDocument: d.title, documentType: d.kind, documentVersion: d.version,
+      publisher: d.publisher, hierarchyLevel: d.tier, clause: r.clause || "", page: r.page,
+      sourceExtract: r.quote, quoteVerifiedAgainstSource: !!r.quoteVerified,
+      obligationLevel: effObligation(r), categories: (r.categories||[]).join("; "),
+      epdSection: r.epdSection || "", applicability: r.applicability || "",
+      interpretation: effInterp(r), interpretationSource: rv.interpretation ? "reviewer-edited" : "AI-proposed",
+      confidence: r.confidence, reviewStatus: statusOf(r), reviewedBy: rv.by || "", reviewedAt: rv.at || "",
+      compilerSection: m ? m.section : "", compilerField: m ? m.field : "", componentType: m ? m.componentType : "",
+      required: m ? String(m.required) : "", unit: m && m.unit ? m.unit : "", repeatability: m ? m.repeatability : "",
+      allowedValues: m && m.allowedValues ? m.allowedValues.join("; ") : "", calculation: m && m.calculation ? m.calculation : "",
+      validationRules: m && m.validations ? m.validations.map(v=>v.rule).join(" | ") : "",
+      developerNotes: m && m.devNotes ? m.devNotes : "", implementationStatus: rv.implStatus || "not-implemented",
+      relatedRequirements: (r.related||[]).map(x=>x.kind+":"+x.id).join("; "), changeCount: (rv.history||[]).length
+    };
+  });
+}
+
+function toCsv(rows){
+  if (!rows.length) return "";
+  const cols = Object.keys(rows[0]);
+  const cell = v => { const s = String(v==null?"":v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
+  return cols.join(",") + "\n" + rows.map(r => cols.map(c => cell(r[c])).join(",")).join("\n");
+}
+
+function specJson(){
+  return {
+    generator:"Clause → Compiler (standalone)", generatedAt:nowISO(), analysisVersion:"0.1",
+    disclaimer:"AI-assisted extraction reviewed by named people. Nothing here is a statement of compliance. The definitive requirement is the wording in the applicable source document.",
+    project:PROJECT,
+    documents:state.docs.filter(d=>!d.demo).map(d => ({id:d.id, title:d.title, type:d.kind, version:d.version, publisher:d.publisher, date:d.date, hierarchyLevel:d.tier, status:d.status, file:d.file})),
+    unresolved: state.reqs.filter(r => statusOf(r)==="proposed" || statusOf(r)==="expert").map(r=>r.id),
+    conflicts: state.reqs.filter(r => (r.related||[]).some(x=>x.kind==="conflict"||x.kind==="duplicate"))
+      .map(r => ({id:r.id, with:(r.related||[]).filter(x=>x.kind==="conflict"||x.kind==="duplicate").map(x=>x.id), note:"Presented for expert resolution. The tool does not decide precedence."})),
+    requirements: state.reqs.filter(r => docById(r.doc) && !docById(r.doc).demo).map(r => {
+      const rv = review(r.id), m = effMapping(r), d = docById(r.doc);
+      return { id:r.id, source:{documentId:d.id, documentTitle:d.title, version:d.version, clause:r.clause, page:r.page, extract:r.quote, quoteVerified:!!r.quoteVerified},
+        classification:{obligation:effObligation(r), categories:r.categories, epdSection:r.epdSection, applicability:r.applicability, confidence:r.confidence},
+        interpretation:{text:effInterp(r), origin: rv.interpretation ? "reviewer" : "ai-proposed", rationale:r.rationale},
+        review:{status:statusOf(r), by:rv.by||null, at:rv.at||null, history:rv.history||[]},
+        compiler: m ? Object.assign({}, m, {implementationStatus: rv.implStatus || "not-implemented"}) : null };
+    })
+  };
+}
+
+/* Portable backup/restore — round-trips the same shape specJson() writes, for moving
+   work between machines without GitHub, or as a manual backup. */
+function backupJson(){
+  const spec = specJson();
+  spec.backupDocuments = state.docs.filter(d=>!d.demo);
+  return spec;
+}
+
+function importBackup(json){
+  let added = 0, skipped = 0;
+  const docs = json.backupDocuments || [];
+  docs.forEach(d => {
+    if (docById(d.id)){ skipped++; return; }
+    state.docs.push(d); added++;
+  });
+  (json.requirements || []).forEach(item => {
+    if (byId(item.id)) return;
+    const d = docById(item.source.documentId); if (!d) return;
+    let bi = d.blocks.findIndex(b => b.page === item.source.page && locate(b.text, item.source.extract));
+    state.reqs.push({
+      id:item.id, doc:item.source.documentId, clause:item.source.clause, page:item.source.page,
+      blockIndex: bi>=0?bi:null, quote:item.source.extract, quoteVerified: !!item.source.quoteVerified,
+      obligation:item.classification.obligation, categories:item.classification.categories||[],
+      epdSection:item.classification.epdSection, applicability:item.classification.applicability,
+      confidence:item.classification.confidence, interpretation:item.interpretation.text,
+      rationale:item.interpretation.rationale, related:[], source: item.interpretation.origin === "reviewer" ? "extracted" : "extracted",
+      needsExpert: item.classification.obligation === "unclear", compiler: item.compiler ? Object.assign({}, item.compiler) : null
+    });
+    if (item.review && (item.review.status !== "proposed" || (item.review.history||[]).length)){
+      state.reviews[item.id] = {status:item.review.status, by:item.review.by, at:item.review.at, history:item.review.history||[]};
+    }
+  });
+  return {added, skipped};
+}
+
+function download(filename, text, mime){
+  const blob = new Blob([text], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+}
+
+function openExport(){
+  const rows = exportRows();
+  const unresolved = state.reqs.filter(r => statusOf(r)==="proposed" || statusOf(r)==="expert").length;
+  const conflicts = state.reqs.filter(r => (r.related||[]).some(x=>x.kind==="conflict"||x.kind==="duplicate")).length;
+  $("#exportBody").innerHTML = `
+    <dl class="grid" style="margin-top:0">
+      <dt>Requirements</dt><dd>${rows.length}</dd>
+      <dt>Accepted</dt><dd>${state.reqs.filter(r=>statusOf(r)==="accepted").length}</dd>
+      <dt>Still unresolved</dt><dd>${unresolved}${unresolved?` — exported as an open-issues list, not as approved requirements`:""}</dd>
+      <dt>Overlaps flagged</dt><dd>${conflicts}</dd>
+      <dt>Your documents</dt><dd>${state.docs.filter(d=>!d.demo).length}</dd>
+    </dl>
+    <p class="mini" style="margin-top:12px">Both exports carry stable requirement identifiers, the exact source extract, clause and page, who decided what and when, and full change history. Downloads land in your browser's normal downloads folder.</p>
+    <p class="mini" style="margin-top:8px">To move your whole workspace to another computer without a GitHub connection, use <b>Import</b> in the header with a JSON export from here.</p>
+    <p class="mini" style="margin-top:8px">Copyright note: extracts from licensed standards are carried as citations. Check your licence before circulating an export that quotes a standard you do not hold redistribution rights for.</p>`;
+  $("#dlgExport").showModal();
+}
+
+/* ============================ audit ============================ */
+
+function openAudit(){
+  const all = [];
+  Object.entries(state.reviews).forEach(([id, rv]) => (rv.history||[]).forEach(h => all.push({id, ...h})));
+  all.sort((a,b) => (a.at < b.at ? 1 : -1));
+  $("#auditBody").innerHTML = all.length
+    ? `<p class="mini" style="margin-top:0">Every decision and edit, newest first.</p>
+       <div class="hist"><ol>${all.map(h => `<li><time>${esc(fmtTime(h.at))}</time><span><b style="font-family:var(--mono);font-size:10.5px;cursor:pointer" data-goto="${esc(h.id)}">${esc(h.id)}</b> — ${esc(h.by||"You")} ${esc(h.what)}</span></li>`).join("")}</ol></div>`
+    : `<div class="empty"><b>Nothing recorded yet</b>Accept, reject or edit a requirement and it appears here.</div>`;
+  $("#dlgAudit").showModal();
+}
+
+/* ============================ banner ============================ */
+
+function renderBanner(){
+  const b = $("#banner");
+  if (!state.anthropicKey){
+    b.hidden = false;
+    b.innerHTML = `No Anthropic API key saved, so "Add document" cannot run. <a id="bannerSettings">Open Settings</a> to add one, or explore the example documents below.`;
+  } else if (!ghConfigured()){
+    b.hidden = false;
+    b.innerHTML = `Not connected to a repository — your work will not survive closing this tab unless you <a id="bannerExport">Export</a> it. <a id="bannerSettings">Connect one in Settings</a> for automatic, cross-computer saving.`;
+  } else {
+    b.hidden = true;
+  }
+  const bs = $("#bannerSettings"); if (bs) bs.addEventListener("click", openSettings);
+  const be = $("#bannerExport"); if (be) be.addEventListener("click", openExport);
+}
+
+/* ============================ settings dialog ============================ */
+
+function openSettings(){
+  $("#sKey").value = state.anthropicKey; $("#sModel").value = state.model;
+  $("#sOwner").value = state.gh.owner; $("#sRepo").value = state.gh.repo; $("#sToken").value = state.gh.token;
+  $("#sTestResult").textContent = "";
+  $("#dlgSettings").showModal();
+}
+
+async function saveSettings(){
+  state.anthropicKey = $("#sKey").value.trim();
+  state.model = $("#sModel").value.trim() || "claude-sonnet-5";
+  const owner = $("#sOwner").value.trim(), repo = $("#sRepo").value.trim(), token = $("#sToken").value.trim();
+  const wasConfigured = ghConfigured();
+  state.gh = {owner, repo, token};
+  saveSettingsLocal();
+  renderBanner();
+  $("#dlgSettings").close();
+  if (ghConfigured() && (!wasConfigured || true)){
+    await syncFromGitHub();
+    if (state.dirty.size || state.docs.some(d=>!d.demo)) scheduleSync("__init__"), state.dirty.delete("__init__");
+    // push anything local that GitHub doesn't have yet
+    state.docs.filter(d=>!d.demo).forEach(d => state.dirty.add(d.id));
+    if (state.dirty.size) runSync();
+  }
+  renderAll();
+}
+
+/* ============================ wiring ============================ */
+
+function renderAll(){ renderDocTabs(); renderFilters(); renderStrip(); renderSource(); renderReq(); renderMap(); renderBanner(); }
+
+function select(id){
+  if (!byId(id)) return;
+  const r = byId(id);
+  if (r.doc !== state.activeDoc) state.activeDoc = r.doc;
+  state.selected = id; renderAll();
+  if (window.matchMedia("(max-width:900px)").matches) showCol("colReq");
+}
+
+function scrollToReq(id){
+  const r = byId(id); if (!r) return;
+  if (r.doc !== state.activeDoc){ state.activeDoc = r.doc; renderAll(); }
+  if (window.matchMedia("(max-width:900px)").matches) showCol("colSrc");
+  const el = $(`mark.hl[data-req="${CSS.escape(id)}"]`);
+  if (el) el.scrollIntoView({block:"center", behavior:"smooth"});
+}
+
+function showCol(id){
+  ["colSrc","colReq","colMap"].forEach(c => $("#"+c).classList.toggle("active", c === id));
+  $("#mnav").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.c === id)));
+}
+
+document.addEventListener("click", e => {
+  const t = e.target, closest = s => t.closest(s);
+
+  const tab = closest(".doctab");
+  if (tab){ state.activeDoc = tab.dataset.doc; const f = visible()[0]; if (f) state.selected = f.id; renderAll(); return; }
+  const fc = closest(".fchip");
+  if (fc){ const k = fc.dataset.ob; state.obligationFilter.has(k) ? state.obligationFilter.delete(k) : state.obligationFilter.add(k); renderAll(); return; }
+  const hl = closest("[data-req]");
+  if (hl){ select(hl.dataset.req); return; }
+  const sc = closest("[data-scroll]");
+  if (sc){ scrollToReq(sc.dataset.scroll); return; }
+  const go = closest("[data-goto]");
+  if (go){ $("#dlgAudit").close(); select(go.dataset.goto); return; }
+  const mg = closest("[data-merge]");
+  if (mg){ doMerge(mg.dataset.merge); return; }
+  const a = closest("[data-act]");
+  if (a){ act(a.dataset.act); return; }
+  if (closest("[data-close]")){ const d = closest("dialog"); if (d) d.close(); return; }
+  const nav = closest("#mnav button");
+  if (nav){ showCol(nav.dataset.c); return; }
+  if (t.id === "connLink"){ openSettings(); return; }
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " "){
+    const t = e.target;
+    if (t.dataset && t.dataset.req){ e.preventDefault(); select(t.dataset.req); }
+  }
+});
+
+$("#savedview").addEventListener("change", e => { state.savedView = e.target.value; const f = visible()[0]; if (f) state.selected = f.id; renderAll(); });
+$("#q").addEventListener("input", e => { state.query = e.target.value; renderAll(); });
+document.addEventListener("selectionchange", selectionHandler);
+
+$("#btnNextHl").addEventListener("click", () => { const v = visible(); if (!v.length) return; const i = v.findIndex(r => r.id === state.selected); select(v[(i+1) % v.length].id); scrollToReq(state.selected); });
+$("#btnPrevHl").addEventListener("click", () => { const v = visible(); if (!v.length) return; const i = v.findIndex(r => r.id === state.selected); select(v[(i-1+v.length) % v.length].id); scrollToReq(state.selected); });
+
+$("#btnAudit").addEventListener("click", openAudit);
+$("#btnExport").addEventListener("click", openExport);
+$("#btnSettings").addEventListener("click", openSettings);
+$("#btnAdd").addEventListener("click", () => { $("#log").innerHTML=""; $("#prog").hidden=true; dlgAdd().showModal(); });
+$("#btnExpCsv").addEventListener("click", () => download("requirements-register.csv", toCsv(exportRows()), "text/csv"));
+$("#btnExpJson").addEventListener("click", () => download("compiler-implementation-spec.json", JSON.stringify(backupJson(), null, 2), "application/json"));
+
+$("#btnImport").addEventListener("click", () => $("#importFile").click());
+$("#importFile").addEventListener("change", () => {
+  const f = $("#importFile").files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const json = JSON.parse(reader.result);
+      const res = importBackup(json);
+      alert(`Imported ${res.added} document(s). ${res.skipped} already present were skipped.`);
+      renderAll();
+      state.docs.filter(d=>!d.demo).forEach(d => scheduleSync(d.id));
+    } catch(e){ alert("Could not read that file: " + (e && e.message || e)); }
+  };
+  reader.readAsText(f);
+  $("#importFile").value = "";
+});
+
+$("#tabPdf").addEventListener("click", () => { ingestMode="pdf"; $("#tabPdf").setAttribute("aria-pressed","true"); $("#tabPaste").setAttribute("aria-pressed","false"); $("#panePdf").hidden=false; $("#panePaste").hidden=true; });
+$("#tabPaste").addEventListener("click", () => { ingestMode="paste"; $("#tabPdf").setAttribute("aria-pressed","false"); $("#tabPaste").setAttribute("aria-pressed","true"); $("#panePdf").hidden=true; $("#panePaste").hidden=false; });
+$("#drop").addEventListener("click", () => $("#file").click());
+$("#drop").addEventListener("keydown", e => { if (e.key==="Enter"||e.key===" "){ e.preventDefault(); $("#file").click(); } });
+$("#drop").addEventListener("dragover", e => { e.preventDefault(); $("#drop").classList.add("over"); });
+$("#drop").addEventListener("dragleave", () => $("#drop").classList.remove("over"));
+$("#drop").addEventListener("drop", e => {
+  e.preventDefault(); $("#drop").classList.remove("over");
+  const f = e.dataTransfer.files[0];
+  if (f){ const dt = new DataTransfer(); dt.items.add(f); $("#file").files = dt.files; $("#drop").innerHTML = `<b>${esc(f.name)}</b><br><span class="mini">${(f.size/1048576).toFixed(1)} MB — ready to analyse</span>`; }
+});
+$("#file").addEventListener("change", () => {
+  const f = $("#file").files[0];
+  if (f) $("#drop").innerHTML = `<b>${esc(f.name)}</b><br><span class="mini">${(f.size/1048576).toFixed(1)} MB — ready to analyse</span>`;
+});
+$("#btnRun").addEventListener("click", runExtraction);
+$("#btnStop").addEventListener("click", () => { if (abortCtl) abortCtl.abort(); });
+
+$("#btnTestConn").addEventListener("click", () => {
+  state.gh = {owner: $("#sOwner").value.trim(), repo: $("#sRepo").value.trim(), token: $("#sToken").value.trim()};
+  testConnection();
+});
+$("#btnSaveSettings").addEventListener("click", saveSettings);
+$("#btnDisconnect").addEventListener("click", () => {
+  if (!confirm("Disconnect this repository? Nothing already saved there is deleted, but this browser will stop syncing to it.")) return;
+  state.gh = {owner:"", repo:"", token:""}; saveSettingsLocal();
+  $("#sOwner").value = ""; $("#sRepo").value = ""; $("#sToken").value = "";
+  $("#sTestResult").textContent = "Disconnected."; state.connected = false;
+  renderAll();
+});
+
+/* panel resizing */
+function grip(el, which){
+  const cols = $("#cols");
+  const down = e => {
+    const cs = getComputedStyle(cols).gridTemplateColumns.split(" ").map(parseFloat);
+    let w1 = cs[0], w2 = cs[2], w3 = cs[4]; const startX = e.clientX;
+    const move = ev => {
+      const dx = ev.clientX - startX; let a = w1, b = w2, c = w3;
+      if (which === 1){ a = Math.max(220, w1 + dx); b = Math.max(220, w2 - dx); } else { b = Math.max(220, w2 + dx); c = Math.max(220, w3 - dx); }
+      cols.style.setProperty("--c1", a + "px"); cols.style.setProperty("--c2", b + "px"); cols.style.setProperty("--c3", c + "px");
+    };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); e.preventDefault();
+  };
+  el.addEventListener("pointerdown", down);
+  el.addEventListener("keydown", e => {
+    const step = e.key === "ArrowLeft" ? -24 : e.key === "ArrowRight" ? 24 : 0; if (!step) return; e.preventDefault();
+    const cs = getComputedStyle(cols).gridTemplateColumns.split(" ").map(parseFloat);
+    let [a,,b,,c] = cs;
+    if (which === 1){ a = Math.max(220, a+step); b = Math.max(220, b-step); } else { b = Math.max(220, b+step); c = Math.max(220, c-step); }
+    cols.style.setProperty("--c1", a+"px"); cols.style.setProperty("--c2", b+"px"); cols.style.setProperty("--c3", c+"px");
+  });
+}
+grip($("#grip1"), 1); grip($("#grip2"), 2);
+
+/* ============================ boot ============================ */
+
+loadSettings();
+renderProject();
+renderAll();
+if (ghConfigured()) syncFromGitHub();
+</script>
+</body>
+</html>
