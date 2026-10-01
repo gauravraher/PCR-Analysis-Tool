@@ -255,6 +255,8 @@ mark.hl{padding:1px 2px; border-radius:4px; cursor:pointer; color:var(--ink); ba
 mark.hl:hover{filter:brightness(.96)}
 mark.hl.unclear{background-image:repeating-linear-gradient(45deg,transparent 0 4px,rgba(122,91,181,.3) 4px 7px)}
 mark.hl[data-sel="1"]{outline:2px solid var(--accent); outline-offset:1px}
+mark.hl.approx{outline:1.5px dashed var(--edge); outline-offset:1px}
+mark.hl.approx[data-sel="1"]{outline:2px solid var(--accent)}
 mark.hl sup{font-family:var(--mono); font-size:8.5px; font-weight:700; padding:0 3px; margin-left:2px; border-radius:20px; background:rgba(255,255,255,.55); vertical-align:super; white-space:nowrap}
 .selbar{position:sticky; bottom:0; padding:10px 16px; background:var(--accent-soft); border-top:1px solid var(--rule); display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:11.5px; color:var(--accent-ink)}
 
@@ -273,6 +275,7 @@ blockquote.src{margin:0; padding:12px 14px; background:var(--panel-2); border-ra
 .srcref a:hover{text-decoration:underline}
 .vquote{display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700}
 .vquote.yes{background:var(--ok-soft); color:var(--ok)}
+.vquote.approx{background:var(--warn-soft); color:var(--warn)}
 .vquote.no{background:var(--danger-soft); color:var(--danger)}
 .interp{font-size:13.5px; line-height:1.6; margin:0; padding:11px 13px; border-radius:var(--r-md); border:1px solid var(--rule); background:var(--panel-2)}
 .interp[contenteditable="true"]:focus{border-color:var(--accent); background:var(--panel); outline:none; box-shadow:0 0 0 3px var(--accent-soft)}
@@ -796,21 +799,67 @@ function effInterp(r){ const rv = review(r.id); return rv.interpretation != null
 function effMapping(r){ const rv = review(r.id); return rv.mapping || r.compiler; }
 function statusOf(r){ const rv = review(r.id); if (rv.status && rv.status !== "proposed") return rv.status; if (r.needsExpert) return "expert"; return "proposed"; }
 
+/* Typographic variants a model commonly normalises away even when told to
+   copy a quote character-for-character (curly quotes, en/em dashes, …).
+   Folding both sides to the same ASCII form before comparing recovers
+   these without weakening the match — the underlying wording is identical. */
+const PUNCT_FOLD = {
+  "‘":"'", "’":"'", "‚":"'", "′":"'",
+  "“":'"', "”":'"', "„":'"', "″":'"',
+  "–":"-", "—":"-", "−":"-", "‑":"-"
+};
+const PUNCT_FOLD_RE = /[‘’‚′“”„″–—−‑]/g;
+function foldPunct(s){ return s.replace(PUNCT_FOLD_RE, c => PUNCT_FOLD[c]); }
+
 function locate(hay, needle){
   if (!hay || !needle) return null;
   const map = []; let norm = "";
   for (let i=0;i<hay.length;i++){
-    const ch = hay[i];
+    const ch = PUNCT_FOLD[hay[i]] || hay[i];
     if (/\s/.test(ch)){ if (norm.length && norm[norm.length-1] === " ") continue; norm += " "; map.push(i); }
     else { norm += ch; map.push(i); }
   }
-  const nn = needle.replace(/\s+/g," ").trim();
+  const nn = foldPunct(needle.replace(/\s+/g," ").trim());
   const at = norm.indexOf(nn);
   if (at < 0) return null;
   const start = map[at];
   const endIdx = at + nn.length - 1;
   const end = (map[endIdx] != null ? map[endIdx] : hay.length-1) + 1;
   return {start, end};
+}
+
+/* Fallback for when the quote still isn't found verbatim — usually light
+   paraphrasing rather than a copy error. Finds the best-overlapping run of
+   words instead of giving up, so the passage can be approximately
+   highlighted (and clearly marked as approximate) rather than lost
+   entirely. Returns null — rather than anchoring to unrelated text — below
+   a minimum overlap. */
+function fuzzyLocate(hay, needle){
+  if (!hay || !needle) return null;
+  const tokenize = s => {
+    const out = []; const re = /[A-Za-z0-9']+/g; let m;
+    while ((m = re.exec(s))) out.push({w: m[0].toLowerCase(), start: m.index, end: m.index + m[0].length});
+    return out;
+  };
+  const hayTok = tokenize(foldPunct(hay));
+  const needleTok = tokenize(foldPunct(needle));
+  if (needleTok.length < 3 || hayTok.length < 3) return null;
+
+  const needleSet = new Set(needleTok.map(t => t.w));
+  const span = Math.max(3, Math.min(hayTok.length, Math.round(needleTok.length * 1.3)));
+
+  let best = null, bestScore = 0;
+  for (let i = 0; i + 3 <= hayTok.length; i++){
+    const j = Math.min(hayTok.length, i + span);
+    const windowWords = new Set();
+    for (let k = i; k < j; k++) windowWords.add(hayTok[k].w);
+    let hits = 0;
+    needleSet.forEach(w => { if (windowWords.has(w)) hits++; });
+    const score = hits / needleSet.size;
+    if (score > bestScore){ bestScore = score; best = {i, j}; }
+  }
+  if (!best || bestScore < 0.55) return null;
+  return {start: hayTok[best.i].start, end: hayTok[best.j - 1].end, score: bestScore};
 }
 
 function b64Encode(str){
@@ -1088,7 +1137,11 @@ function renderSource(){
   d.blocks.forEach((b, bi) => {
     const here = state.reqs.filter(r => r.doc === d.id && (r.blockIndex === bi || (r.blockIndex == null && r.clause === b.clause && r.page === b.page)));
     const spans = [];
-    here.forEach(r => { const loc = locate(b.text, r.quote); if (loc) spans.push({start:loc.start, end:loc.end, r}); });
+    here.forEach(r => {
+      let loc = locate(b.text, r.quote), approx = false;
+      if (!loc && r.approxMatch && r.blockIndex === bi){ loc = fuzzyLocate(b.text, r.quote); approx = true; }
+      if (loc) spans.push({start:loc.start, end:loc.end, r, approx});
+    });
     spans.sort((a,x) => a.start - x.start || x.end - a.end);
 
     let out = "", cur = 0;
@@ -1097,9 +1150,11 @@ function renderSource(){
       out += esc(b.text.slice(cur, s.start));
       const ob = effObligation(s.r);
       const dim = shownIds.has(s.r.id) ? "" : "opacity:.28;";
-      out += `<mark class="hl ${ob}" data-req="${esc(s.r.id)}" data-sel="${s.r.id===state.selected?1:0}" tabindex="0" role="button"
+      const approxCls = s.approx ? " approx" : "";
+      const approxTitle = s.approx ? " — approximate location only, verify against source" : "";
+      out += `<mark class="hl ${ob}${approxCls}" data-req="${esc(s.r.id)}" data-sel="${s.r.id===state.selected?1:0}" tabindex="0" role="button"
         style="--fill:var(--hl-${ob});--edge:var(--hl-${ob}-edge);${dim}"
-        title="${esc(OBLIGATIONS[ob].label)} — ${esc(s.r.id)}">${esc(b.text.slice(s.start, s.end))}<sup>${esc(s.r.id)}</sup></mark>`;
+        title="${esc(OBLIGATIONS[ob].label)} — ${esc(s.r.id)}${approxTitle}">${esc(b.text.slice(s.start, s.end))}<sup>${s.approx?"~":""}${esc(s.r.id)}</sup></mark>`;
       cur = s.end;
     });
     out += esc(b.text.slice(cur));
@@ -1125,7 +1180,7 @@ function renderSource(){
     html += `<div style="padding:11px 13px;border-top:2px solid var(--danger);background:var(--danger-soft)">
       <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--danger);margin-bottom:5px">
         ${unlocated.length} requirement(s) could not be located in the document text</div>
-      <p class="mini" style="margin:0 0 7px">The quote returned by the analysis does not appear verbatim in the extracted text, so it cannot be highlighted. Treat these as unreliable and check them against the source by hand.</p>
+      <p class="mini" style="margin:0 0 7px">The quote returned by the analysis does not appear verbatim in the extracted text, and no closely-overlapping passage was found either, so it cannot be highlighted. Treat these as unreliable and check them against the source by hand.</p>
       ${unlocated.map(r => `<div class="listrow" style="background:transparent;border-color:var(--rule)" data-req="${esc(r.id)}" role="button" tabindex="0">
         <span class="rid">${esc(r.id)}</span><span class="rq">${esc(r.quote)}</span></div>`).join("")}
     </div>`;
@@ -1164,7 +1219,9 @@ function renderReq(){
         <a data-scroll="${esc(r.id)}">page ${esc(r.page)} ↗</a>
         ${r.quoteVerified
           ? `<span class="vquote yes" title="This string was found character-for-character in the extracted document text">✓ quote verified against source</span>`
-          : `<span class="vquote no" title="The analysis returned a quote that does not appear verbatim in the extracted text. Treat it as unreliable.">✕ quote not found in source</span>`}
+          : r.approxMatch
+          ? `<span class="vquote approx" title="This exact wording wasn't found, but a closely-overlapping passage was — the highlight marks an approximate location. Verify it against the source.">≈ approximate location only</span>`
+          : `<span class="vquote no" title="The analysis returned a quote that does not appear verbatim in the extracted text, and no closely-overlapping passage was found either. Treat it as unreliable.">✕ quote not found in source</span>`}
       </div>
     </div>
   </div>
@@ -1653,6 +1710,12 @@ async function runExtraction(){
         let verified = bi >= 0;
         if (bi < 0) bi = doc.blocks.findIndex(b => locate(b.text, item.quote));
         if (bi >= 0 && !verified) verified = true;
+        let approx = false;
+        if (bi < 0){
+          let fb = doc.blocks.findIndex(b => b.page === page && fuzzyLocate(b.text, item.quote));
+          if (fb < 0) fb = doc.blocks.findIndex(b => fuzzyLocate(b.text, item.quote));
+          if (fb >= 0){ bi = fb; approx = true; }
+        }
         const id = "R-" + String(found.length + 1).padStart(3,"0") + "-" + docId.slice(-4);
         found.push({
           id, doc:docId, clause: item.clause || null, page: bi>=0 ? doc.blocks[bi].page : page,
@@ -1661,9 +1724,9 @@ async function runExtraction(){
           categories: Array.isArray(item.categories) ? item.categories.slice(0,3) : [],
           epdSection: item.epdSection || "", applicability: item.applicability || null,
           interpretation: item.interpretation || "", rationale: item.rationale || "",
-          confidence: verified ? Math.max(0, Math.min(1, Number(item.confidence) || 0.5)) : 0.2,
+          confidence: verified ? Math.max(0, Math.min(1, Number(item.confidence) || 0.5)) : (approx ? 0.4 : 0.2),
           related: [], source:"extracted", extractedAt: nowISO(),
-          quoteVerified: verified, needsExpert: item.obligation === "unclear",
+          quoteVerified: verified, approxMatch: approx, needsExpert: item.obligation === "unclear",
           compiler: item.compiler && item.compiler.field ? item.compiler : null
         });
       });
@@ -1676,8 +1739,16 @@ async function runExtraction(){
     $("#prog").firstElementChild.style.width = (35 + Math.round(n/chunks.length*65)) + "%";
   }
 
-  const unverified = found.filter(f => !f.quoteVerified).length;
-  logLine(`Done. ${found.length} proposed requirement(s)${unverified?`, of which ${unverified} carry a quote that could not be matched against the document text and are flagged`:""}.`);
+  const approxCount = found.filter(f => f.approxMatch).length;
+  const notFound = found.filter(f => !f.quoteVerified && !f.approxMatch).length;
+  let tail = "";
+  if (approxCount || notFound){
+    const parts = [];
+    if (approxCount) parts.push(`${approxCount} could only be located approximately`);
+    if (notFound) parts.push(`${notFound} could not be matched against the document text at all`);
+    tail = `, of which ${parts.join(" and ")} — flagged for a closer look`;
+  }
+  logLine(`Done. ${found.length} proposed requirement(s)${tail}.`);
 
   if (found.length){
     state.docs.push(doc);
@@ -1698,7 +1769,7 @@ function exportRows(){
     return {
       requirementId: r.id, sourceDocument: d.title, documentType: d.kind, documentVersion: d.version,
       publisher: d.publisher, hierarchyLevel: d.tier, clause: r.clause || "", page: r.page,
-      sourceExtract: r.quote, quoteVerifiedAgainstSource: !!r.quoteVerified,
+      sourceExtract: r.quote, quoteVerifiedAgainstSource: !!r.quoteVerified, locationApproximate: !!r.approxMatch,
       obligationLevel: effObligation(r), categories: (r.categories||[]).join("; "),
       epdSection: r.epdSection || "", applicability: r.applicability || "",
       interpretation: effInterp(r), interpretationSource: rv.interpretation ? "reviewer-edited" : "AI-proposed",
@@ -1731,7 +1802,7 @@ function specJson(){
       .map(r => ({id:r.id, with:(r.related||[]).filter(x=>x.kind==="conflict"||x.kind==="duplicate").map(x=>x.id), note:"Presented for expert resolution. The tool does not decide precedence."})),
     requirements: state.reqs.filter(r => docById(r.doc) && !docById(r.doc).demo).map(r => {
       const rv = review(r.id), m = effMapping(r), d = docById(r.doc);
-      return { id:r.id, source:{documentId:d.id, documentTitle:d.title, version:d.version, clause:r.clause, page:r.page, extract:r.quote, quoteVerified:!!r.quoteVerified},
+      return { id:r.id, source:{documentId:d.id, documentTitle:d.title, version:d.version, clause:r.clause, page:r.page, extract:r.quote, quoteVerified:!!r.quoteVerified, approxMatch:!!r.approxMatch},
         classification:{obligation:effObligation(r), categories:r.categories, epdSection:r.epdSection, applicability:r.applicability, confidence:r.confidence},
         interpretation:{text:effInterp(r), origin: rv.interpretation ? "reviewer" : "ai-proposed", rationale:r.rationale},
         review:{status:statusOf(r), by:rv.by||null, at:rv.at||null, history:rv.history||[]},
@@ -1759,9 +1830,17 @@ function importBackup(json){
     if (byId(item.id)) return;
     const d = docById(item.source.documentId); if (!d) return;
     let bi = d.blocks.findIndex(b => b.page === item.source.page && locate(b.text, item.source.extract));
+    if (bi < 0) bi = d.blocks.findIndex(b => locate(b.text, item.source.extract));
+    let approx = false;
+    if (bi < 0 && !item.source.quoteVerified){
+      let fb = d.blocks.findIndex(b => b.page === item.source.page && fuzzyLocate(b.text, item.source.extract));
+      if (fb < 0) fb = d.blocks.findIndex(b => fuzzyLocate(b.text, item.source.extract));
+      if (fb >= 0){ bi = fb; approx = true; }
+    }
     state.reqs.push({
       id:item.id, doc:item.source.documentId, clause:item.source.clause, page:item.source.page,
       blockIndex: bi>=0?bi:null, quote:item.source.extract, quoteVerified: !!item.source.quoteVerified,
+      approxMatch: item.source.approxMatch != null ? !!item.source.approxMatch : approx,
       obligation:item.classification.obligation, categories:item.classification.categories||[],
       epdSection:item.classification.epdSection, applicability:item.classification.applicability,
       confidence:item.classification.confidence, interpretation:item.interpretation.text,
