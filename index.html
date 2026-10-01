@@ -231,6 +231,8 @@ select.view{
   color:var(--ink-2); font-size:11px; line-height:1.5;
 }
 .block{display:flex; gap:0; border-bottom:1px solid var(--rule)}
+@keyframes jumpFlash{ 0%{background:var(--accent-soft)} 100%{background:transparent} }
+.block.jump-flash{animation:jumpFlash 1.6s ease-out}
 .gutter{
   flex:0 0 44px; padding:14px 5px 14px 10px; display:flex; flex-direction:column; gap:6px;
   align-items:flex-start; background:var(--panel);
@@ -1619,8 +1621,21 @@ async function runExtraction(){
     file: ingestMode==="pdf" ? ($("#file").files[0]||{}).name : "pasted text",
     demo:false, warnings:src.empties, blocks:src.pages.map(p => ({page:p.n, clause:null, heading:"Page "+p.n, text:p.text}))};
 
-  const chunks = chunkPages(src.pages, 14000).slice(0, 8);
-  logLine(`Analysing ${chunks.length} section(s) of the document. Each is a separate call to the Anthropic API using your key.`);
+  const chunks = chunkPages(src.pages, 14000);
+  const LARGE_JOB_SECTIONS = 12;
+  if (chunks.length > LARGE_JOB_SECTIONS){
+    const lastPage = src.pages.length ? src.pages[src.pages.length-1].n : "?";
+    const proceed = confirm(
+      `This document needs ${chunks.length} separate calls to the Anthropic API to cover all of it (through page ${lastPage}), ` +
+      `using your saved key. That will take a few minutes and counts against your API usage.\n\n` +
+      `Continue with all ${chunks.length} sections?`
+    );
+    if (!proceed){
+      logLine(`Cancelled before analysis started — the document has ${chunks.length} section(s) through page ${lastPage}; no API calls were made.`);
+      $("#btnRun").disabled = false; $("#btnStop").hidden = true; return;
+    }
+  }
+  logLine(`Analysing all ${chunks.length} section(s) of the document — nothing is left out. Each section is a separate call to the Anthropic API using your key.`);
 
   abortCtl = new AbortController();
   const found = []; let n = 0;
@@ -1870,7 +1885,17 @@ function scrollToReq(id){
   if (r.doc !== state.activeDoc){ state.activeDoc = r.doc; renderAll(); }
   if (window.matchMedia("(max-width:900px)").matches) showCol("colSrc");
   const el = $(`mark.hl[data-req="${CSS.escape(id)}"]`);
-  if (el) el.scrollIntoView({block:"center", behavior:"smooth"});
+  if (el){ el.scrollIntoView({block:"center", behavior:"smooth"}); return; }
+  // The quote couldn't be matched verbatim, so there's no highlight to jump to —
+  // still take the reviewer to the right page rather than doing nothing.
+  const d = docById(r.doc);
+  let bi = r.blockIndex;
+  if (bi == null && d) bi = d.blocks.findIndex(b => b.page === r.page);
+  const blk = (bi != null && bi >= 0) ? document.getElementById(`blk-${bi}`) : null;
+  if (blk){
+    blk.scrollIntoView({block:"start", behavior:"smooth"});
+    blk.classList.remove("jump-flash"); void blk.offsetWidth; blk.classList.add("jump-flash");
+  }
 }
 
 function showCol(id){
