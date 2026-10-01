@@ -349,6 +349,12 @@ blockquote.src{margin:0; padding:12px 14px; background:var(--panel-2); border-ra
 .implrow{display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-top:12px}
 
 .empty{padding:44px 24px; text-align:center; color:var(--ink-3); font-size:12.5px; line-height:1.6}
+.empty-workspace{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:10px; max-width:440px; margin:9vh auto 0; padding:40px 28px}
+.empty-workspace .ew-icon{width:46px; height:46px; border-radius:var(--r-lg); background:var(--accent-soft); color:var(--accent-ink); display:grid; place-items:center; font-size:21px; font-weight:600; margin-bottom:4px}
+.empty-workspace h2{margin:0; font-size:16px; color:var(--ink)}
+.empty-workspace p{margin:0; color:var(--ink-2); font-size:12.5px; line-height:1.6}
+.empty-workspace .ew-acts{display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; justify-content:center}
+.empty-workspace .ew-note{color:var(--ink-3)}
 .empty b{display:block; color:var(--ink); font-size:14px; margin-bottom:6px; font-weight:700}
 .listrow{display:flex; gap:10px; align-items:flex-start; padding:10px 16px; border-bottom:1px solid var(--rule); cursor:pointer; background:var(--panel); transition:background .1s}
 .listrow:hover{background:var(--panel-2)}
@@ -407,7 +413,7 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
 
 <div id="banner" class="banner" hidden></div>
 
-<div class="toolbar">
+<div class="toolbar" id="toolbar">
   <div class="doctabs" id="doctabs"></div>
   <div class="filters" id="filters"></div>
   <div class="spacer"></div>
@@ -425,6 +431,17 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
 </div>
 
 <div class="strip" id="strip"></div>
+
+<div id="emptyWorkspace" class="empty-workspace" hidden>
+  <div class="ew-icon" aria-hidden="true">＋</div>
+  <h2>No documents yet</h2>
+  <p>Add a PCR, General Programme Instructions, standard or other source document to start extracting and mapping requirements. PDFs are parsed in your browser, then reviewed with your own Anthropic API key — nothing is uploaded anywhere else.</p>
+  <div class="ew-acts">
+    <button class="btn primary" id="btnAddEmpty">Add document</button>
+    <button class="btn ghost" id="btnLoadDemo">Load example documents</button>
+  </div>
+  <p class="mini ew-note">The examples are the real GPI and Construction products PCR text, bundled so you can see how review and mapping work. They're clearly marked "DEMO" and are never saved to your repository.</p>
+</div>
 
 <main class="cols" id="cols">
   <section class="col active" id="colSrc" aria-label="Source document">
@@ -744,14 +761,13 @@ const SEED = [
 /* ============================ state ============================ */
 
 const state = {
-  reqs: [], docs: DOCS.slice(), activeDoc: "pcr201914", selected: "R-001",
+  reqs: [], docs: [], activeDoc: null, selected: null,
   obligationFilter: new Set(), savedView: "all", query: "",
   reviews: {},
   gh: {owner:"", repo:"", token:""}, anthropicKey:"", model:"claude-sonnet-5",
   ghShas: {}, connected:false, connecting:false, connError:"", dirty:new Set(), lastSync:null,
   me: {name:""}
 };
-SEED.forEach(r => state.reqs.push(Object.assign({source:"seed", quoteVerified:true}, r)));
 
 /* ============================ helpers ============================ */
 
@@ -759,6 +775,15 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const byId = id => state.reqs.find(r => r.id === id);
 const docById = id => state.docs.find(d => d.id === id);
+
+/* Demo content is opt-in only — loaded on request, never at boot — so a first run (and every
+   plain reload) starts from a genuinely empty workspace. See "Load example documents". */
+function loadDemoWorkspace(){
+  DOCS.forEach(d => { if (!docById(d.id)) state.docs.push(d); });
+  SEED.forEach(r => { if (!byId(r.id)) state.reqs.push(Object.assign({source:"seed", quoteVerified:true}, r)); });
+  if (!state.activeDoc){ state.activeDoc = "pcr201914"; state.selected = "R-001"; }
+  renderAll();
+}
 const review = id => state.reviews[id] || {status:"proposed", history:[]};
 const nowISO = () => new Date().toISOString();
 const fmtTime = iso => { try { return new Date(iso).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"}); } catch(e){ return iso; } };
@@ -938,6 +963,11 @@ async function syncFromGitHub(){
         (doc.data.requirements || []).forEach(r => { if (!byId(r.id)) state.reqs.push(r); });
         Object.assign(state.reviews, doc.data.reviews || {});
       }
+    }
+    if (!state.activeDoc && state.docs.length){
+      state.activeDoc = state.docs[0].id;
+      const f = state.reqs.find(r => r.doc === state.activeDoc);
+      if (f) state.selected = f.id;
     }
     state.connected = true; state.connError = ""; state.lastSync = nowISO();
   } catch(e){
@@ -1816,7 +1846,16 @@ async function saveSettings(){
 
 /* ============================ wiring ============================ */
 
-function renderAll(){ renderDocTabs(); renderFilters(); renderStrip(); renderSource(); renderReq(); renderMap(); renderBanner(); }
+function renderWorkspaceState(){
+  const empty = state.docs.length === 0;
+  $("#toolbar").hidden = empty;
+  $("#strip").hidden = empty;
+  $("#cols").hidden = empty;
+  $("#mnav").hidden = empty;
+  $("#emptyWorkspace").hidden = !empty;
+}
+
+function renderAll(){ renderWorkspaceState(); renderDocTabs(); renderFilters(); renderStrip(); renderSource(); renderReq(); renderMap(); renderBanner(); }
 
 function select(id){
   if (!byId(id)) return;
@@ -1879,7 +1918,10 @@ $("#btnPrevHl").addEventListener("click", () => { const v = visible(); if (!v.le
 $("#btnAudit").addEventListener("click", openAudit);
 $("#btnExport").addEventListener("click", openExport);
 $("#btnSettings").addEventListener("click", openSettings);
-$("#btnAdd").addEventListener("click", () => { $("#log").innerHTML=""; $("#prog").hidden=true; dlgAdd().showModal(); });
+function openAddDialog(){ $("#log").innerHTML=""; $("#prog").hidden=true; dlgAdd().showModal(); }
+$("#btnAdd").addEventListener("click", openAddDialog);
+$("#btnAddEmpty").addEventListener("click", openAddDialog);
+$("#btnLoadDemo").addEventListener("click", loadDemoWorkspace);
 $("#btnExpCsv").addEventListener("click", () => download("requirements-register.csv", toCsv(exportRows()), "text/csv"));
 $("#btnExpJson").addEventListener("click", () => download("compiler-implementation-spec.json", JSON.stringify(backupJson(), null, 2), "application/json"));
 
