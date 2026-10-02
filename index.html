@@ -422,6 +422,7 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
   <div class="doctabs" id="doctabs"></div>
   <div class="filters" id="filters"></div>
   <div class="spacer"></div>
+  <button class="btn sm ghost" id="btnDeepScan" title="Send the whole active document to the team's AI backend to catch obligations the local keyword scan missed">AI deep scan</button>
   <select class="view" id="savedview" aria-label="Saved filters">
     <option value="all">All requirements</option>
     <option value="unreviewed">Unreviewed</option>
@@ -505,12 +506,25 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
     </div>
     <div class="prog" id="prog" hidden><i></i></div>
     <div class="log" id="log"></div>
-    <p class="mini" id="keyNote" style="margin-top:12px">Extraction calls the Anthropic API directly from this page using the key you saved in Settings. Nothing is uploaded anywhere else. Results are proposals only — status "Proposed" until you accept them.</p>
+    <p class="mini" id="keyNote" style="margin-top:12px">The PDF is parsed in your browser and scanned locally for "shall / must / should / may" obligation language — nothing is sent anywhere, no team code needed. Results are proposals only — status "Proposed" until you accept them. You can run an optional AI deep scan afterwards (from the toolbar) to catch obligations phrased without those keywords.</p>
   </div>
   <div class="dfoot">
     <button class="btn" data-close>Cancel</button>
-    <button class="btn" id="btnStop" hidden>Stop</button>
-    <button class="btn primary" id="btnRun">Extract requirements</button>
+    <button class="btn primary" id="btnRun">Scan document</button>
+  </div>
+</dialog>
+
+<dialog id="dlgScan" closedby="any">
+  <div class="dhead"><h3>AI deep scan</h3><div class="spacer"></div><button class="btn sm ghost" data-close>Close</button></div>
+  <div class="dbody">
+    <p class="mini" style="margin-top:0" id="scanIntro"></p>
+    <div class="prog" id="scanProg" hidden><i></i></div>
+    <div class="log" id="scanLog"></div>
+  </div>
+  <div class="dfoot">
+    <button class="btn" data-close>Close</button>
+    <button class="btn" id="btnScanStop" hidden>Stop</button>
+    <button class="btn primary" id="btnScanRun">Start deep scan</button>
   </div>
 </dialog>
 
@@ -1045,7 +1059,7 @@ function renderReq(){
   const r = byId(state.selected); const host = $("#reqBody");
   if (!r){ $("#reqId").textContent=""; host.innerHTML = `<div class="empty"><b>No requirement selected</b>Pick a highlighted passage in the source panel.</div>`; return; }
   const d = docById(r.doc), rv = review(r.id), st = statusOf(r), ob = effObligation(r);
-  $("#reqId").textContent = `${r.id} · ${r.source === "seed" ? "example" : "extracted " + (r.extractedAt ? fmtTime(r.extractedAt) : "")}`;
+  $("#reqId").textContent = `${r.id} · ${r.source === "seed" ? "example" : (r.source === "rule" ? "scanned " : "extracted ") + (r.extractedAt ? fmtTime(r.extractedAt) : "")}`;
 
   const rel = (r.related||[]).map(x => {
     const o = byId(x.id); if (!o) return "";
@@ -1074,8 +1088,12 @@ function renderReq(){
     </div>
   </div>
   <div class="zone">
-    <div class="zonehead"><span class="zonenum">2</span><h3>What this tool believes it means</h3><span class="tag ai">AI-generated · proposal</span></div>
+    <div class="zonehead"><span class="zonenum">2</span><h3>What this tool believes it means</h3>
+      <span class="tag ${r.source==="rule" && !r.aiReviewed ? "" : "ai"}">${r.source==="rule" && !r.aiReviewed ? "Local keyword scan · unclassified" : r.source==="seed" ? "Example" : "AI-generated · proposal"}</span>
+      ${r.source==="rule" ? `<button class="btn sm" id="btnAiAssist" style="margin-left:auto" title="Send just this one passage to the team's AI backend for categorisation, EPD-section mapping and a compiler field proposal">${r.aiReviewed ? "Re-run AI assist" : "AI assist →"}</button>` : ""}
+    </div>
     <div class="zonebody">
+      ${r.source==="rule" && !r.aiReviewed ? `<p class="mini" style="margin-top:0">Found by the local "shall/must/should/may" keyword scan — no AI has looked at this yet, so there's no interpretation, category or compiler mapping below. Click "AI assist" above to have the team's backend classify just this one passage.</p>` : ""}
       <p class="interp" id="interp" contenteditable="true" spellcheck="false">${esc(effInterp(r))}</p>
       <p class="rationale"><b>Why this passage was flagged:</b> ${esc(r.rationale||"—")}</p>
       <dl class="grid">
@@ -1122,6 +1140,8 @@ function renderReq(){
   else if (ip) ip.setAttribute("contenteditable","false");
   const os = $("#obSel");
   if (os) os.addEventListener("change", () => saveReview(r.id, {obligation:os.value}, `changed the obligation level to ${OBLIGATIONS[os.value].label.toLowerCase()}`));
+  const aiBtn = $("#btnAiAssist");
+  if (aiBtn) aiBtn.addEventListener("click", () => aiAssistRequirement(r.id));
 }
 
 /* ============================ mapping panel ============================ */
@@ -1488,6 +1508,50 @@ function parsePasted(text){
   return {pages: pages.map(p => ({n:p.n, text:p.text.replace(/\s+/g," ").trim()})), empties:[]};
 }
 
+/* ============================ local rule-based extraction ============================ */
+/* Runs entirely in the browser, no network, no team code. Finds obligation-bearing sentences
+   by keyword and attaches the nearest ALL-CAPS "N.N HEADING" clause number it can find before
+   them — the same drafting convention EPD/PCR/ISO documents actually use. When it can't find
+   one, clause stays null rather than guessing (never invent a clause number). Every quote
+   returned here is a literal substring of the page text it came from, so it is always
+   quoteVerified — there is no approximate-match case for this path. */
+
+const RULE_OBLIGATION_PATTERNS = [
+  { re: /\b(shall not|must not|is not permitted to|is prohibited from)\b/i, obligation: "prohibited" },
+  { re: /\b(shall|must|is required to|is obliged to)\b/i, obligation: "mandatory" },
+  { re: /\bshould\b/i, obligation: "recommended" },
+  { re: /\bmay\b/i, obligation: "optional" }
+];
+const RULE_HEADER_RE = /(\d{1,2}(?:\.\d{1,2}){0,3})\s+([A-Z][A-Z0-9 \-\/,&()]{3,80}?)(?=\s[A-Z][a-z]|\s\d|$)/g;
+
+function ruleBasedExtract(pages){
+  const results = [];
+  pages.forEach(p => {
+    const text = p.text;
+    const headers = [...text.matchAll(RULE_HEADER_RE)].map(m => ({clause:m[1], idx:m.index, end:m.index+m[0].length}));
+    const zones = [];
+    if (headers.length){
+      headers.forEach((h,i) => zones.push({clause:h.clause, start:h.end, end: i+1<headers.length ? headers[i+1].idx : text.length}));
+      if (headers[0].idx > 0) zones.unshift({clause:null, start:0, end:headers[0].idx});
+    } else {
+      zones.push({clause:null, start:0, end:text.length});
+    }
+    zones.forEach(z => {
+      const chunk = text.slice(z.start, z.end);
+      chunk.split(/(?<=[.;])\s+(?=[A-Z(])/).forEach(raw => {
+        const s = raw.trim();
+        if (s.length < 30 || s.length > 320) return;
+        const rule = RULE_OBLIGATION_PATTERNS.find(r => r.re.test(s));
+        if (!rule) return;
+        results.push({ quote:s, page:p.n, clause:z.clause, obligation:rule.obligation });
+      });
+    });
+  });
+  // De-dupe identical quotes (can recur verbatim, e.g. boilerplate repeated per section).
+  const seen = new Set();
+  return results.filter(r => { const k = r.page+"|"+r.quote; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
 function chunkPages(pages, maxChars){
   const out = []; let cur = "", first = null;
   pages.forEach(p => {
@@ -1499,28 +1563,30 @@ function chunkPages(pages, maxChars){
   return out;
 }
 
-async function runExtraction(){
-  if (!state.teamCode){ logLine("No team access code saved. Open Settings and add it first."); return; }
+/* Adds a document: parses it (PDF via pdf.js, or pasted text) and runs the local keyword scan.
+   No network call, no team code required — this is the default, always-available path. */
+async function addDocument(){
   const title = $("#mTitle").value.trim() || (ingestMode === "pdf" ? "Uploaded document" : "Pasted extract");
 
   $("#log").innerHTML = ""; $("#prog").hidden = false; $("#prog").firstElementChild.style.width = "0%";
-  $("#btnRun").disabled = true; $("#btnStop").hidden = false;
+  $("#btnRun").disabled = true;
 
   let src;
   try {
     if (ingestMode === "pdf"){
       const f = $("#file").files[0];
-      if (!f){ logLine("Choose a PDF first."); $("#btnRun").disabled=false; $("#btnStop").hidden=true; return; }
+      if (!f){ logLine("Choose a PDF first."); $("#btnRun").disabled=false; return; }
       src = await readPdf(f);
     } else {
       const t = $("#paste").value;
-      if (t.trim().length < 40){ logLine("Paste some clause text first."); $("#btnRun").disabled=false; $("#btnStop").hidden=true; return; }
+      if (t.trim().length < 40){ logLine("Paste some clause text first."); $("#btnRun").disabled=false; return; }
       src = parsePasted(t);
     }
   } catch(e){
     logLine("Could not read the document: " + (e && e.message ? e.message : String(e)));
-    $("#btnRun").disabled = false; $("#btnStop").hidden = true; return;
+    $("#btnRun").disabled = false; return;
   }
+  $("#prog").firstElementChild.style.width = "50%";
 
   const docId = "up" + Date.now().toString(36);
   const doc = {id:docId, tier:5, kind:$("#mType").value, title,
@@ -1529,33 +1595,67 @@ async function runExtraction(){
     file: ingestMode==="pdf" ? ($("#file").files[0]||{}).name : "pasted text",
     demo:false, warnings:src.empties, blocks:src.pages.map(p => ({page:p.n, clause:null, heading:"Page "+p.n, text:p.text}))};
 
-  const chunks = chunkPages(src.pages, 14000);
+  logLine("Scanning for obligation language (shall / must / should / may) …");
+  const hits = ruleBasedExtract(src.pages);
+  const found = hits.map((item, i) => {
+    const bi = doc.blocks.findIndex(b => b.page === item.page && locate(b.text, item.quote));
+    return {
+      id: "R-" + String(i+1).padStart(3,"0") + "-" + docId.slice(-4),
+      doc:docId, clause:item.clause, page:item.page, blockIndex: bi>=0?bi:null, quote:item.quote,
+      obligation:item.obligation, categories:[], epdSection:"", applicability:null,
+      interpretation:"", rationale:`Contains an obligation keyword consistent with "${OBLIGATIONS[item.obligation].label.toLowerCase()}".`,
+      confidence:0.5, related:[], source:"rule", aiReviewed:false, extractedAt: nowISO(),
+      quoteVerified: bi>=0, approxMatch:false, needsExpert:false, compiler:null
+    };
+  });
+  $("#prog").firstElementChild.style.width = "100%";
+  logLine(`Done. ${found.length} candidate requirement(s) found locally. Use "AI assist" on a requirement, or "AI deep scan" from the toolbar, to classify them and catch anything phrased without shall/must/should/may.`);
+
+  state.docs.push(doc);
+  found.forEach(f => state.reqs.push(f));
+  state.activeDoc = docId; if (found.length) state.selected = found[0].id;
+  scheduleSync(docId);
+  renderAll();
+  setTimeout(() => dlgAdd().close(), 900);
+  $("#btnRun").disabled = false;
+}
+
+/* Optional, explicit, per-document: sends the whole document to the team's AI backend in
+   chunks to find requirements the local keyword scan would miss (obligations not phrased with
+   shall/must/should/may). Skips any quote that's already present for this document, whether
+   found by the rule-based scan or a previous deep scan, so re-running doesn't duplicate rows. */
+async function aiDeepScan(docId){
+  if (!state.teamCode){ scanLogLine("No team access code saved. Open Settings and add it first."); return; }
+  const doc = docById(docId); if (!doc) return;
+
+  const existingQuotes = new Set(state.reqs.filter(r => r.doc === docId).map(r => r.quote));
+  const pages = doc.blocks.map(b => ({n:b.page, text:b.text}));
+  const chunks = chunkPages(pages, 14000);
   const LARGE_JOB_SECTIONS = 12;
   if (chunks.length > LARGE_JOB_SECTIONS){
-    const lastPage = src.pages.length ? src.pages[src.pages.length-1].n : "?";
+    const lastPage = pages.length ? pages[pages.length-1].n : "?";
     const proceed = confirm(
-      `This document needs ${chunks.length} separate calls to the Anthropic API to cover all of it (through page ${lastPage}), ` +
-      `using your saved key. That will take a few minutes and counts against your API usage.\n\n` +
-      `Continue with all ${chunks.length} sections?`
+      `This document needs ${chunks.length} separate calls to the team's AI backend to cover all of it (through page ${lastPage}). ` +
+      `That will take a few minutes and counts against the team's usage.\n\nContinue with all ${chunks.length} sections?`
     );
-    if (!proceed){
-      logLine(`Cancelled before analysis started — the document has ${chunks.length} section(s) through page ${lastPage}; no API calls were made.`);
-      $("#btnRun").disabled = false; $("#btnStop").hidden = true; return;
-    }
+    if (!proceed){ scanLogLine(`Cancelled — the document has ${chunks.length} section(s) through page ${lastPage}; no calls were made.`); return; }
   }
-  logLine(`Analysing all ${chunks.length} section(s) of the document — nothing is left out. Each section is a separate call to the Anthropic API using your key.`);
+  scanLogLine(`Analysing all ${chunks.length} section(s) — nothing is left out. Each section is one call to the team backend.`);
+  $("#btnScanRun").disabled = true; $("#btnScanStop").hidden = false; $("#scanProg").hidden = false;
 
   abortCtl = new AbortController();
-  const found = []; let n = 0;
+  const found = []; let n = 0, skipped = 0;
   for (const ch of chunks){
     n++;
-    logLine(`Section ${n} of ${chunks.length} — pages ${ch.from}–${ch.to} …`);
+    scanLogLine(`Section ${n} of ${chunks.length} — pages ${ch.from}–${ch.to} …`);
     try {
       const text = await callClaude(buildPrompt(doc, ch.text), abortCtl.signal);
       const arr = parseJsonLoose(text);
       const list = Array.isArray(arr) ? arr : [];
+      let added = 0;
       list.forEach(item => {
         if (!item || typeof item.quote !== "string") return;
+        if (existingQuotes.has(item.quote)) { skipped++; return; }
         const page = Number(item.page) || ch.from;
         let bi = doc.blocks.findIndex(b => b.page === page && locate(b.text, item.quote));
         let verified = bi >= 0;
@@ -1567,7 +1667,8 @@ async function runExtraction(){
           if (fb < 0) fb = doc.blocks.findIndex(b => fuzzyLocate(b.text, item.quote));
           if (fb >= 0){ bi = fb; approx = true; }
         }
-        const id = "R-" + String(found.length + 1).padStart(3,"0") + "-" + docId.slice(-4);
+        existingQuotes.add(item.quote);
+        const id = "R-" + String(state.reqs.length + found.length + 1).padStart(3,"0") + "-" + docId.slice(-4);
         found.push({
           id, doc:docId, clause: item.clause || null, page: bi>=0 ? doc.blocks[bi].page : page,
           blockIndex: bi >= 0 ? bi : null, quote: item.quote,
@@ -1576,40 +1677,95 @@ async function runExtraction(){
           epdSection: item.epdSection || "", applicability: item.applicability || null,
           interpretation: item.interpretation || "", rationale: item.rationale || "",
           confidence: verified ? Math.max(0, Math.min(1, Number(item.confidence) || 0.5)) : (approx ? 0.4 : 0.2),
-          related: [], source:"extracted", extractedAt: nowISO(),
+          related: [], source:"extracted", aiReviewed:true, extractedAt: nowISO(),
           quoteVerified: verified, approxMatch: approx, needsExpert: item.obligation === "unclear",
           compiler: item.compiler && item.compiler.field ? item.compiler : null
         });
+        added++;
       });
-      logLine(`  → ${list.length} passage(s) proposed`);
+      scanLogLine(`  → ${added} new passage(s) (${list.length - added} already found)`);
     } catch(e){
-      if (e && e.name === "AbortError"){ logLine("Stopped."); break; }
-      logLine("  → section failed: " + ((e && e.message) || String(e)));
+      if (e && e.name === "AbortError"){ scanLogLine("Stopped."); break; }
+      scanLogLine("  → section failed: " + ((e && e.message) || String(e)));
       if (e && (e.status === 401)) break;
     }
-    $("#prog").firstElementChild.style.width = (35 + Math.round(n/chunks.length*65)) + "%";
+    $("#scanProg").firstElementChild.style.width = Math.round(n/chunks.length*100) + "%";
   }
 
-  const approxCount = found.filter(f => f.approxMatch).length;
-  const notFound = found.filter(f => !f.quoteVerified && !f.approxMatch).length;
-  let tail = "";
-  if (approxCount || notFound){
-    const parts = [];
-    if (approxCount) parts.push(`${approxCount} could only be located approximately`);
-    if (notFound) parts.push(`${notFound} could not be matched against the document text at all`);
-    tail = `, of which ${parts.join(" and ")} — flagged for a closer look`;
-  }
-  logLine(`Done. ${found.length} proposed requirement(s)${tail}.`);
-
+  scanLogLine(`Done. ${found.length} new requirement(s) found${skipped ? ` (${skipped} already present, skipped)` : ""}.`);
   if (found.length){
-    state.docs.push(doc);
     found.forEach(f => state.reqs.push(f));
-    state.activeDoc = docId; state.selected = found[0].id;
+    state.selected = found[0].id;
     scheduleSync(docId);
     renderAll();
-    setTimeout(() => dlgAdd().close(), 900);
   }
-  $("#btnRun").disabled = false; $("#btnStop").hidden = true; abortCtl = null;
+  $("#btnScanRun").disabled = false; $("#btnScanStop").hidden = true; abortCtl = null;
+}
+
+function scanLogLine(s){ const l = $("#scanLog"); const d = document.createElement("div"); d.textContent = s; l.appendChild(d); l.scrollTop = l.scrollHeight; }
+
+function openDeepScanDialog(){
+  const doc = docById(state.activeDoc);
+  $("#scanLog").innerHTML = ""; $("#scanProg").hidden = true; $("#btnScanStop").hidden = true; $("#btnScanRun").disabled = false;
+  $("#scanIntro").textContent = doc
+    ? `Send "${doc.title}" to the team's AI backend to catch obligations the local keyword scan missed (phrasing without shall/must/should/may). Passages already found stay as they are.`
+    : "No document selected.";
+  $("#btnScanRun").disabled = !doc;
+  $("#dlgScan").showModal();
+}
+
+/* ============================ single-requirement AI assist ============================ */
+/* Classifies ONE already-located passage — sends just that quote, not the whole document, so
+   it costs a fraction of a deep scan. Fills in categories, EPD section, applicability,
+   interpretation, rationale, confidence and a compiler field proposal for a rule-found
+   requirement that hasn't been AI-reviewed yet. */
+
+function buildAssistPrompt(doc, req){
+  return `You are classifying a single EPD-relevant requirement already located in a programme document, for review by a life-cycle assessment expert.
+
+DOCUMENT: ${doc.title} — ${doc.kind}, version ${doc.version}, published by ${doc.publisher}.
+PASSAGE (page ${req.page}${req.clause ? `, clause ${req.clause}` : ""}): "${req.quote}"
+
+Return ONLY a single JSON object, nothing else — no preamble, no markdown fence:
+{"obligation": string, "categories": [string], "epdSection": string, "applicability": string|null,
+ "interpretation": string, "rationale": string, "confidence": number,
+ "compiler": {"section": string, "field": string, "helpText": string, "componentType": string,
+   "required": true|false|"conditional", "unit": string|null, "allowedValues": [string]|null,
+   "repeatability": string, "calculation": string|null, "defaultValue": string|null, "devNotes": string|null,
+   "validations": [{"rule": string, "why": string}]} | null}
+
+"obligation" must be one of: ${Object.keys(OBLIGATIONS).join(", ")}. "categories" at most 3 values from: ${CATLIST}.
+"epdSection" is where in the EPD reporting format this belongs. "compiler.componentType" at most one of: ${COMPLIST}.
+Base everything only on the passage and document context given — do not invent clause numbers or page references.
+Output the JSON object and nothing else.`;
+}
+
+async function aiAssistRequirement(reqId){
+  const r = byId(reqId); if (!r) return;
+  if (!state.teamCode){ alert("No team access code saved. Open Settings and add it first."); return; }
+  const doc = docById(r.doc); if (!doc) return;
+  const btn = $("#btnAiAssist");
+  if (btn){ btn.disabled = true; btn.textContent = "Asking the backend…"; }
+  try {
+    const text = await callClaude(buildAssistPrompt(doc, r));
+    const item = parseJsonLoose(text);
+    if (item && typeof item === "object" && !Array.isArray(item)){
+      r.obligation = OBLIGATIONS[item.obligation] ? item.obligation : r.obligation;
+      r.categories = Array.isArray(item.categories) ? item.categories.slice(0,3) : [];
+      r.epdSection = item.epdSection || "";
+      r.applicability = item.applicability || null;
+      r.interpretation = item.interpretation || "";
+      r.rationale = item.rationale || r.rationale;
+      r.confidence = Math.max(0, Math.min(1, Number(item.confidence) || 0.5));
+      r.compiler = item.compiler && item.compiler.field ? item.compiler : null;
+      r.source = "rule"; r.aiReviewed = true;
+      scheduleSync(r.doc);
+      renderAll();
+    }
+  } catch(e){
+    alert("AI assist failed: " + ((e && e.message) || String(e)));
+    if (btn){ btn.disabled = false; btn.textContent = "AI assist →"; }
+  }
 }
 
 /* ============================ export / import ============================ */
@@ -1750,7 +1906,7 @@ function renderBanner(){
   const b = $("#banner");
   if (!state.teamCode){
     b.hidden = false;
-    b.innerHTML = `No team access code saved, so "Extract requirements" can't run yet. <a id="bannerSettings">Open Settings</a> to add it.`;
+    b.innerHTML = `No team access code saved — the local keyword scan still works fully. <a id="bannerSettings">Open Settings</a> to add a code if you want AI deep scan / AI assist too.`;
   } else if (!ghConfigured()){
     b.hidden = false;
     b.innerHTML = `Not connected to a repository — your work will not survive closing this tab unless you <a id="bannerExport">Export</a> it. <a id="bannerSettings">Connect one in Settings</a> for automatic, cross-computer saving.`;
@@ -1911,8 +2067,10 @@ $("#file").addEventListener("change", () => {
   const f = $("#file").files[0];
   if (f) $("#drop").innerHTML = `<b>${esc(f.name)}</b><br><span class="mini">${(f.size/1048576).toFixed(1)} MB — ready to analyse</span>`;
 });
-$("#btnRun").addEventListener("click", runExtraction);
-$("#btnStop").addEventListener("click", () => { if (abortCtl) abortCtl.abort(); });
+$("#btnRun").addEventListener("click", addDocument);
+$("#btnDeepScan").addEventListener("click", openDeepScanDialog);
+$("#btnScanRun").addEventListener("click", () => aiDeepScan(state.activeDoc));
+$("#btnScanStop").addEventListener("click", () => { if (abortCtl) abortCtl.abort(); });
 
 $("#btnTestConn").addEventListener("click", () => {
   state.gh = {owner: $("#sOwner").value.trim(), repo: $("#sRepo").value.trim(), token: $("#sToken").value.trim()};
