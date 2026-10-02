@@ -440,7 +440,7 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
 <div id="emptyWorkspace" class="empty-workspace" hidden>
   <div class="ew-icon" aria-hidden="true">＋</div>
   <h2>No documents yet</h2>
-  <p>Add a PCR, General Programme Instructions, standard or other source document to start extracting and mapping requirements. PDFs are parsed in your browser, then reviewed with your own Anthropic API key — nothing is uploaded anywhere else.</p>
+  <p>Add a PCR, General Programme Instructions, standard or other source document to start extracting and mapping requirements. PDFs are parsed in your browser, then reviewed through the team's shared backend — no personal API key needed.</p>
   <div class="ew-acts">
     <button class="btn primary" id="btnAddEmpty">Add document</button>
   </div>
@@ -517,15 +517,15 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
 <dialog id="dlgSettings" closedby="any">
   <div class="dhead"><h3>Settings</h3><div class="spacer"></div><button class="btn sm ghost" data-close>Close</button></div>
   <div class="dbody">
-    <p class="mini" style="margin-top:0">Everything here is stored only in this browser (and, if you connect a repository below, in that private repository). Nothing is sent to us.</p>
+    <p class="mini" style="margin-top:0">Everything here is stored only in this browser — never synced to the repository below, even if you connect one, since that repository is public.</p>
 
-    <div class="fieldrow"><label for="sKey">Anthropic API key</label>
-      <input id="sKey" type="password" placeholder="sk-ant-…" autocomplete="off">
-      <span class="hint">From <span style="font-family:var(--mono)">console.anthropic.com</span>. Required for "Add document". Stored locally; also saved to your private repository below if connected, so you don't have to re-enter it on other computers.</span>
+    <div class="fieldrow"><label for="sTeamCode">Team access code</label>
+      <input id="sTeamCode" type="password" placeholder="shared team code" autocomplete="off">
+      <span class="hint">Shared by your team lead. Gates the team's backend, which holds the real Anthropic key server-side — you never need your own. Required for "Extract requirements". Stored only in this browser; you'll re-enter it on other computers.</span>
     </div>
     <div class="fieldrow"><label for="sModel">Model</label>
       <input id="sModel" type="text" placeholder="claude-sonnet-5">
-      <span class="hint">Any model id your key has access to.</span>
+      <span class="hint">Any model id the team's backend has access to.</span>
     </div>
 
     <div style="margin:16px 0 10px; border-top:1px dashed var(--rule)"></div>
@@ -625,7 +625,7 @@ const state = {
   reqs: [], docs: [], activeDoc: null, selected: null,
   obligationFilter: new Set(), savedView: "all", query: "",
   reviews: {},
-  gh: {owner:"", repo:"", token:""}, anthropicKey:"", model:"claude-sonnet-5",
+  gh: {owner:"", repo:"", token:""}, teamCode:"", model:"claude-sonnet-5",
   ghShas: {}, connected:false, connecting:false, connError:"", dirty:new Set(), lastSync:null,
   me: {name:""}
 };
@@ -733,12 +733,14 @@ const LS = {
 
 function loadSettings(){
   state.gh = LS.get("cc.gh", {owner:"", repo:"", token:""});
-  state.anthropicKey = LS.get("cc.anthropicKey", "");
+  state.teamCode = LS.get("cc.teamCode", "");
   state.model = LS.get("cc.model", "claude-sonnet-5");
   state.me.name = LS.get("cc.me", "");
 }
 function saveSettingsLocal(){
-  LS.set("cc.gh", state.gh); LS.set("cc.anthropicKey", state.anthropicKey);
+  // Deliberately local-only: the team code (like the Anthropic key it used to replace) must
+  // never be synced to the GitHub repository below, since that repository is public.
+  LS.set("cc.gh", state.gh); LS.set("cc.teamCode", state.teamCode);
   LS.set("cc.model", state.model); LS.set("cc.me", state.me.name);
 }
 
@@ -826,9 +828,8 @@ async function runSync(){
       await ghPutFile("data/documents/" + docId + ".json", payload, "Update " + d.title);
     }
     await syncIndex();
-    if (state.anthropicKey || state.model !== "claude-sonnet-5"){
-      await ghPutFile("data/config.json", {anthropicKey: state.anthropicKey, model: state.model}, "Update config").catch(()=>{});
-    }
+    // No secrets are ever written to the repository (it's public) — the team code and model
+    // choice stay purely local to each browser; see saveSettingsLocal().
     state.lastSync = nowISO(); state.connected = true; state.connError = "";
   } catch(e){
     state.connError = (e && e.message) || String(e);
@@ -847,12 +848,8 @@ async function syncFromGitHub(){
   if (!ghConfigured()) return;
   state.connecting = true; renderConn();
   try {
-    const cfg = await ghGetFile("data/config.json").catch(()=>({exists:false}));
-    if (cfg.exists && cfg.data){
-      if (cfg.data.anthropicKey && !state.anthropicKey) state.anthropicKey = cfg.data.anthropicKey;
-      if (cfg.data.model) state.model = cfg.data.model;
-      saveSettingsLocal();
-    }
+    // data/config.json is no longer read or written — secrets never touch this public
+    // repository. Each browser keeps its own team code and model choice locally.
     const idx = await ghGetFile("data/index.json").catch(()=>({exists:false}));
     if (idx.exists && idx.data && Array.isArray(idx.data.documents)){
       for (const entry of idx.data.documents){
@@ -1433,20 +1430,21 @@ function parseJsonLoose(text){
   throw new Error("Could not parse a JSON value from the response");
 }
 
+// Replace with your deployed Cloudflare Worker URL (see worker/README-DEPLOY.md). The browser
+// never talks to api.anthropic.com or holds a real Anthropic key — only the Worker does.
+const WORKER_URL = "https://pcr-tool-proxy.YOUR-SUBDOMAIN.workers.dev";
+
 async function callClaude(prompt, signal){
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch(WORKER_URL, {
     method:"POST", signal,
-    headers:{
-      "content-type":"application/json", "x-api-key": state.anthropicKey,
-      "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true"
-    },
+    headers:{ "content-type":"application/json", "x-team-code": state.teamCode },
     body: JSON.stringify({model: state.model || "claude-sonnet-5", max_tokens: 4096, messages:[{role:"user", content:prompt}]})
   });
   if (!res.ok){
     let msg = "HTTP " + res.status;
     try { const j = await res.json(); if (j && j.error && j.error.message) msg = j.error.message; } catch(e){}
-    if (res.status === 401) msg = "API key rejected. Check it in Settings.";
-    if (res.status === 429) msg = "Rate limited by the API. Wait a moment and try again.";
+    if (res.status === 401) msg = "Team access code rejected. Check it in Settings.";
+    if (res.status === 429) msg = "Rate limited. Wait a moment and try again.";
     throw Object.assign(new Error(msg), {status: res.status});
   }
   const json = await res.json();
@@ -1502,7 +1500,7 @@ function chunkPages(pages, maxChars){
 }
 
 async function runExtraction(){
-  if (!state.anthropicKey){ logLine("No Anthropic API key saved. Open Settings and add one first."); return; }
+  if (!state.teamCode){ logLine("No team access code saved. Open Settings and add it first."); return; }
   const title = $("#mTitle").value.trim() || (ingestMode === "pdf" ? "Uploaded document" : "Pasted extract");
 
   $("#log").innerHTML = ""; $("#prog").hidden = false; $("#prog").firstElementChild.style.width = "0%";
@@ -1750,9 +1748,9 @@ function openAudit(){
 
 function renderBanner(){
   const b = $("#banner");
-  if (!state.anthropicKey){
+  if (!state.teamCode){
     b.hidden = false;
-    b.innerHTML = `No Anthropic API key saved, so "Add document" cannot run. <a id="bannerSettings">Open Settings</a> to add one, or explore the example documents below.`;
+    b.innerHTML = `No team access code saved, so "Extract requirements" can't run yet. <a id="bannerSettings">Open Settings</a> to add it.`;
   } else if (!ghConfigured()){
     b.hidden = false;
     b.innerHTML = `Not connected to a repository — your work will not survive closing this tab unless you <a id="bannerExport">Export</a> it. <a id="bannerSettings">Connect one in Settings</a> for automatic, cross-computer saving.`;
@@ -1766,14 +1764,14 @@ function renderBanner(){
 /* ============================ settings dialog ============================ */
 
 function openSettings(){
-  $("#sKey").value = state.anthropicKey; $("#sModel").value = state.model;
+  $("#sTeamCode").value = state.teamCode; $("#sModel").value = state.model;
   $("#sOwner").value = state.gh.owner; $("#sRepo").value = state.gh.repo; $("#sToken").value = state.gh.token;
   $("#sTestResult").textContent = "";
   $("#dlgSettings").showModal();
 }
 
 async function saveSettings(){
-  state.anthropicKey = $("#sKey").value.trim();
+  state.teamCode = $("#sTeamCode").value.trim();
   state.model = $("#sModel").value.trim() || "claude-sonnet-5";
   const owner = $("#sOwner").value.trim(), repo = $("#sRepo").value.trim(), token = $("#sToken").value.trim();
   const wasConfigured = ghConfigured();

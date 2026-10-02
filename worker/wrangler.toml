@@ -1,0 +1,13 @@
+name = "pcr-tool-proxy"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# --- Optional: per-team-code rate limiting -----------------------------------------------
+# Without this, the Worker still works, it just skips the rate-limit check. To enable it:
+#   1. wrangler kv namespace create RATE_LIMIT_KV
+#   2. paste the "id" it prints into the binding below
+#   3. uncomment the [[kv_namespaces]] block
+#
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT_KV"
+# id = "PASTE_THE_ID_HERE"
