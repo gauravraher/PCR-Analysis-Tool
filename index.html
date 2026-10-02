@@ -443,9 +443,7 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
   <p>Add a PCR, General Programme Instructions, standard or other source document to start extracting and mapping requirements. PDFs are parsed in your browser, then reviewed with your own Anthropic API key — nothing is uploaded anywhere else.</p>
   <div class="ew-acts">
     <button class="btn primary" id="btnAddEmpty">Add document</button>
-    <button class="btn ghost" id="btnLoadDemo">Load example documents</button>
   </div>
-  <p class="mini ew-note">The examples are the real GPI and Construction products PCR text, bundled so you can see how review and mapping work. They're clearly marked "DEMO" and are never saved to your repository.</p>
 </div>
 
 <main class="cols" id="cols">
@@ -612,156 +610,14 @@ const COMPONENTS = {
 
 const MODULES = ["A1","A2","A3","A4","A5","B1","B2","B3","B4","B5","B6","B7","C1","C2","C3","C4","D"];
 
-/* ============================ demo project + seeded documents ============================ */
-/* These load every time, work offline, and are never written to GitHub. They exist so the
-   workspace is never empty on first run. Real documents you add live alongside them. */
+/* ============================ project context ============================ */
+/* No defaults here — a real project's category/market/standards should come from documents you
+   actually add, not a bundled example. Chips stay blank (and collapse) until something sets them. */
 
 const PROJECT = {
-  name: "Prefabricated concrete wall elements",
-  category: "UN CPC 3755 — Prefabricated structural components",
-  operator: "EPD International AB",
-  market: "EU / EEA",
-  epdType: "Type b — product-specific, cradle to gate with modules C and D",
-  standards: "EN 15804:2012+A2:2019 · ISO 14025 · ISO 21930",
-  compiler: "EPD compiler template v4.2"
+  name: "", category: "", operator: "", market: "", epdType: "", standards: "", compiler: ""
 };
 
-const DOCS = [
-  {
-    id:"gpi5", tier:3, kind:"General Programme Instructions", demo:true,
-    title:"General Programme Instructions for the International EPD System",
-    version:"5.0.1", publisher:"EPD International AB", date:"2025-02-27",
-    lang:"en", status:"Active", file:"gpi5-0-1_20250227.pdf",
-    blocks:[
-      {page:28, clause:"7.1", heading:"Language", text:"EPDs shall as a minimum be published in English to ensure global applicability and usefulness, but may also be published in other languages."},
-      {page:29, clause:"7.4", heading:"Content of the EPD", text:"The EPD shall include the following sections: Cover page, General information, Information about EPD owner, Product information, Content declaration, LCA information, Environmental performance, Version history, Abbreviations, References."},
-      {page:30, clause:"7.4.5", heading:"Content declaration", text:"Must declare composition/content information relevant to the product category as specified in the applicable PCR."},
-      {page:30, clause:"7.4.6", heading:"LCA information", text:"Shall include system boundary description, allocation procedures, data quality information, and reference to the LCA report."},
-      {page:31, clause:"7.4.7", heading:"Environmental performance", text:"Results must be presented per life-cycle stage with environmental performance indicators as specified in the applicable PCR."},
-      {page:31, clause:"7.4.10", heading:"Comparability", text:"The EPD shall include a statement on comparability: “EPDs are not intended to be compared with each other, because they do not comply with identical assumptions, methods…”"},
-      {page:24, clause:"6.6", heading:"Registration and publication", text:"The Secretariat subsequently publish the EPD in the EPD library once having confirmed that all requirements are met."},
-      {page:25, clause:"6.8", heading:"Updating an EPD", text:"An updated EPD shall undergo re-verification, except when only editorial changes are made. Updated EPDs require a description of the differences versus the previous version in a section named “Version history”."},
-      {page:26, clause:"6.8.1", heading:"Mandatory update triggers", text:"Updates are required for an increase of 10% or more in the aggregated results, or substantial changes to the declared product information."},
-      {page:26, clause:"6.9", heading:"Depublication", text:"Depublished EPDs shall not be considered valid, even if the validity period as stated in the EPD has not passed."},
-      {page:45, clause:"8.4", heading:"Verification", text:"Verification must be carried out by approved individual verifiers or accredited certification bodies, with documented verification reports."}
-    ]
-  },
-  {
-    id:"pcr201914", tier:4, kind:"PCR", demo:true,
-    title:"PCR 2019:14 Construction products",
-    version:"2.0.0 (open-consultation draft)", publisher:"EPD International AB", date:"2024-10",
-    lang:"en", status:"Draft — open consultation", file:"pcr2019-14-construction-products-draft-v2-0-0.pdf",
-    blocks:[
-      {page:9,  clause:"2.2.1", heading:"Product category definition", text:"An EPD shall specify its product category in accordance with the UN CPC classification system, if possible."},
-      {page:9,  clause:"2.2.2", heading:"EPD types", text:"EPDs of type d and type e shall only be used if the following three conditions are valid."},
-      {page:10, clause:"2.2.2", heading:"Modules to be declared (Table 2)", text:"A4) Transport: Not applicable for type a; Optional for goods; Mandatory for services. A5) Construction installation: Not applicable for type a; Optional for goods; Mandatory for services. C1) Deconstruction, demolition: Mandatory. D) Reuse, recovery, recycling, potential: Mandatory."},
-      {page:10, clause:"2.2.2", heading:"Packaging and biogenic carbon", text:"If the packaging contains more than 5% biogenic carbon, module A5 shall be included at least for balancing."},
-      {page:12, clause:"2.2.4", heading:"Validity and updating", text:"An EPD shall be updated and re-verified during its validity if an increase of 10% or more in aggregated results. If such changes occurred, but the EPD is not updated, the EPD owner shall depublish the EPD."},
-      {page:16, clause:"4.2",   heading:"Declared unit", text:"EPDs based on this PCR without using a c-PCR shall use a declared unit. EPDs based on this PCR together with a c-PCR may use a functional unit if allowed by the c-PCR."},
-      {page:17, clause:"4.3.1", heading:"System boundary — energy", text:"Each module shall include the generation of electricity and production of fuels, steam and other energy carriers."},
-      {page:17, clause:"4.3.2", heading:"System boundary — waste", text:"Each module shall include the waste processing of waste generated in the module up to end-of-waste state."},
-      {page:17, clause:"4.3.5", heading:"Excluded processes", text:"Business travel of personnel, travel to and from work by personnel shall be excluded, unless the c-PCR says otherwise."},
-      {page:18, clause:"4.3.6", heading:"Infrastructure and capital goods", text:"In general, the production and end-of-life processes of infrastructure and capital goods shall not be included. If infrastructure/capital goods are included, this shall be described in the EPD, unless they contribute less than 10%."},
-      {page:18, clause:"3.7",   heading:"Use-stage scenarios", text:"Module B6 shall be included also for non-EEE products that consumes energy in the use stage. Scenarios for module B6 shall represent normal (i.e., anticipated) use and be geographically representative."},
-      {page:19, clause:"4.4",   heading:"Cut-off rules", text:"LCI data shall include a minimum of 95% of total inflows (mass and energy) per life-cycle stages. Exclusion of LCI data based on the cut-off rule shall be based on a sensitivity analysis and/or conservative assumptions."},
-      {page:20, clause:"4.5.1", heading:"Allocation of co-products", text:"Allocation shall be avoided, if possible, by dividing the unit process into two or more sub-processes. Allocation shall be based on physical properties when there is a relevant underlying physical relationship. In all other cases, allocation shall be based on economic values of the product and co-products."},
-      {page:23, clause:"4.5.2", heading:"Allocation of waste", text:"If it is unknown whether the end-of-waste criteria are fulfilled, a conservative assumption shall be made."},
-      {page:24, clause:"4.5.3", heading:"Scrap and recycled materials", text:"If post-industrial and/or post-consumer scrap is a main input, the allocation procedure applied shall be clearly described. If the scrap inputs contribute more than 10% to the GWP-GHG results, the GWP-GHG intensity shall be declared."},
-      {page:26, clause:"4.6.1", heading:"Primary data", text:"Primary data shall be used for (at least) the processes over which the product manufacturer has operational control. Proxy data shall not contribute to more than 10% of the A1-A3 results for any of the impact indicators."},
-      {page:27, clause:"4.6.2", heading:"Data collection period", text:"Data should be averaged over at least one year of operations; deviations shall be justified. The reference year of the data shall not be more than five years old and shall be representative for validity period."},
-      {page:27, clause:"4.6.3", heading:"Secondary data", text:"The reference year shall be as current as possible and not represent a reference year older than 10 years."},
-      {page:27, clause:"4.6.4", heading:"Data quality assessment", text:"A data quality assessment that complies with EN 15941 shall be done and reported in the LCA report. Assessment shall cover data that together contribute to at least 80% of results of each impact indicator."}
-    ]
-  }
-];
-
-const SEED = [
-{id:"R-001", doc:"pcr201914", clause:"4.2", page:16,
- quote:"EPDs based on this PCR without using a c-PCR shall use a declared unit.",
- obligation:"mandatory", categories:["Declared or functional unit"], epdSection:"LCA information → Declared unit",
- applicability:"Applies when no complementary PCR is selected for the project.",
- interpretation:"When the EPD is built on PCR 2019:14 alone, the basis of declaration must be a declared unit, not a functional unit. The compiler should therefore force the declared-unit path and only open the functional-unit path once a c-PCR that permits it has been selected.",
- rationale:"Unconditional 'shall' fixing the basis of declaration, which the compiler has to enforce before any results can be entered.",
- confidence:0.94, related:[{id:"R-002", kind:"pair"}],
- compiler:{section:"LCA information", field:"Declared unit", componentType:"unit-number", required:true,
-  helpText:"State the amount of product the declared results refer to, for example 1 m² of wall element at 200 mm thickness.",
-  unit:"kg | m | m² | m³ | piece", allowedValues:["kg","m","m²","m³","piece","t"], repeatability:"single",
-  calculation:null, defaultValue:null, devNotes:"Bind the unit list to the c-PCR selection; when no c-PCR is chosen, disable the 'functional unit' radio entirely rather than hiding it, so the user sees why.",
-  validations:[
-    {rule:"required(declaredUnit.amount) AND required(declaredUnit.unit)", why:"The EPD cannot be published without a basis of declaration."},
-    {rule:"IF project.cPCR == none THEN basisOfDeclaration == 'declared unit'", why:"Clause 4.2 permits a functional unit only together with a c-PCR."},
-    {rule:"declaredUnit.amount > 0", why:"A non-positive declared quantity cannot scale LCA results."}
-  ]}},
-{id:"R-002", doc:"pcr201914", clause:"4.2", page:16,
- quote:"EPDs based on this PCR together with a c-PCR may use a functional unit if allowed by the c-PCR.",
- obligation:"conditional", categories:["Declared or functional unit"], epdSection:"LCA information → Declared unit",
- applicability:"If a c-PCR is selected AND that c-PCR allows a functional unit.",
- interpretation:"A functional unit is permitted only when two conditions hold together: a c-PCR applies and that c-PCR explicitly allows it. This is a permission, not an obligation, so the compiler should offer the choice rather than default to it.",
- rationale:"'may … if allowed by' is conditional permission language governing the same field as R-001.",
- confidence:0.9, related:[{id:"R-001", kind:"pair"}],
- compiler:{section:"LCA information", field:"Basis of declaration", componentType:"radio", required:true,
-  helpText:"Choose declared unit, or functional unit where the applicable c-PCR allows it.",
-  unit:null, allowedValues:["Declared unit","Functional unit"], repeatability:"single",
-  calculation:null, defaultValue:"Declared unit",
-  devNotes:"Needs a per-c-PCR flag 'allowsFunctionalUnit' in the c-PCR registry. Until that exists, keep the option disabled with an explanatory tooltip.",
-  validations:[
-    {rule:"IF basisOfDeclaration == 'Functional unit' THEN required(project.cPCR) AND cPCR.allowsFunctionalUnit == true", why:"Both conditions in clause 4.2 must hold before a functional unit is admissible."},
-    {rule:"IF basisOfDeclaration == 'Functional unit' THEN required(functionalUnit.description)", why:"A functional unit is meaningless without the stated function and performance."}
-  ]}},
-{id:"R-003", doc:"pcr201914", clause:"2.2.2", page:10,
- quote:"C1) Deconstruction, demolition: Mandatory. D) Reuse, recovery, recycling, potential: Mandatory.",
- obligation:"mandatory", categories:["Life-cycle modules","End-of-life modelling","Reuse, recovery and recycling"],
- epdSection:"Environmental performance → Declared modules",
- applicability:null,
- interpretation:"Modules C1 and D must be declared for every EPD in scope of this PCR. In the compiler the module matrix cannot be saved with C1 or D left as MND, and the results table must expose the corresponding columns.",
- rationale:"Table 2 marks these modules 'Mandatory' with no qualifying condition attached.",
- confidence:0.88, related:[{id:"R-004", kind:"pair"}],
- compiler:{section:"Environmental performance", field:"Declared life-cycle modules", componentType:"module-matrix", required:true,
-  helpText:"Mark each module as declared (X), module not declared (MND) or module not relevant (MNR). C1–C4 and D are mandatory under PCR 2019:14.",
-  unit:null, allowedValues:["X","MND","MNR"], repeatability:"per module",
-  calculation:null, defaultValue:null,
-  devNotes:"The matrix is the single source of truth for which columns the indicator tables render. Changing a module from X to MND must warn that entered results will be discarded.",
-  validations:[
-    {rule:"modules.C1 == 'X' AND modules.D == 'X'", why:"Table 2 declares C1 and D mandatory for all EPD types in scope."},
-    {rule:"FOR EACH module WHERE modules[m] == 'X': indicatorTable.column[m] is complete", why:"A declared module with empty result columns is an incomplete EPD."},
-    {rule:"BLOCK PUBLICATION IF any mandatory module is not 'X'", why:"Publication must not be possible while a mandatory module is undeclared."}
-  ]}},
-{id:"R-019", doc:"gpi5", clause:"7.4.10", page:31,
- quote:"The EPD shall include a statement on comparability: “EPDs are not intended to be compared with each other, because they do not comply with identical assumptions, methods…”",
- obligation:"mandatory", categories:["Comparability statement","Mandatory disclaimers"],
- epdSection:"General information → Comparability",
- applicability:null,
- interpretation:"A fixed disclaimer must appear in every EPD. Because the wording is prescribed rather than authored, it belongs in the compiler as generated read-only text, not as a field a user can edit and get wrong.",
- rationale:"Prescribed wording introduced by a 'shall include' — the strongest case for a read-only generated component.",
- confidence:0.95, related:[],
- compiler:{section:"General information", field:"Comparability statement", componentType:"readonly", required:true,
-  helpText:"This statement is inserted automatically and cannot be edited. It is required by the General Programme Instructions.",
-  unit:null, allowedValues:null, repeatability:"single",
-  calculation:"Rendered from the GPI template string for the EPD's language.",
-  defaultValue:"EPDs are not intended to be compared with each other, because they do not comply with identical assumptions, methods…",
-  devNotes:"Store the canonical wording per language against the GPI version so an EPD published under GPI 5.0.1 keeps 5.0.1's wording after the next GPI release.",
-  validations:[
-    {rule:"comparabilityStatement is present and matches the GPI template for the EPD language", why:"The wording is prescribed and must not drift."},
-    {rule:"field is read-only in all roles", why:"An editable disclaimer will eventually be edited."}
-  ]}},
-{id:"R-024", doc:"gpi5", clause:"8.4", page:45,
- quote:"Verification must be carried out by approved individual verifiers or accredited certification bodies, with documented verification reports.",
- obligation:"mandatory", categories:["Verification statement","Supporting documentation"],
- epdSection:"General information → Verification",
- applicability:null,
- interpretation:"The verifier must be drawn from an approved list rather than typed in freely, and the verification report has to be attached. A reference selector bound to the programme's verifier registry is the component that makes this checkable.",
- rationale:"Names an approved population — the signal for a reference selector rather than a text field.",
- confidence:0.91, related:[],
- compiler:{section:"General information", field:"Verifier", componentType:"reference", required:true,
-  helpText:"Select the approved individual verifier or accredited certification body from the programme register.",
-  unit:null, allowedValues:null, repeatability:"single", calculation:null, defaultValue:null,
-  devNotes:"Needs a live link to the programme's verifier register. A free-text fallback should be explicitly blocked, not just discouraged.",
-  validations:[
-    {rule:"verifier IN programmeRegister.approvedVerifiers WHERE status == 'active'", why:"Only approved verifiers may verify."},
-    {rule:"required(upload: verificationReport)", why:"The clause requires a documented verification report."},
-    {rule:"verifier.organisation != epdOwner.organisation", why:"Independence is a verification requirement; the compiler can catch the obvious breach."}
-  ]}}
-];
 
 /* ============================ state ============================ */
 
@@ -781,14 +637,8 @@ const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<"
 const byId = id => state.reqs.find(r => r.id === id);
 const docById = id => state.docs.find(d => d.id === id);
 
-/* Demo content is opt-in only — loaded on request, never at boot — so a first run (and every
-   plain reload) starts from a genuinely empty workspace. See "Load example documents". */
-function loadDemoWorkspace(){
-  DOCS.forEach(d => { if (!docById(d.id)) state.docs.push(d); });
-  SEED.forEach(r => { if (!byId(r.id)) state.reqs.push(Object.assign({source:"seed", quoteVerified:true}, r)); });
-  if (!state.activeDoc){ state.activeDoc = "pcr201914"; state.selected = "R-001"; }
-  renderAll();
-}
+/* No demo/seed content at all: the workspace starts empty and stays empty until a real
+   document is added via "Add document". */
 const review = id => state.reviews[id] || {status:"proposed", history:[]};
 const nowISO = () => new Date().toISOString();
 const fmtTime = iso => { try { return new Date(iso).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"}); } catch(e){ return iso; } };
@@ -1032,7 +882,8 @@ async function syncFromGitHub(){
 
 function renderProject(){
   const c = [["Project",PROJECT.name],["Category",PROJECT.category],["Programme",PROJECT.operator],
-             ["Market",PROJECT.market],["EPD type",PROJECT.epdType],["Standards",PROJECT.standards],["Compiler",PROJECT.compiler]];
+             ["Market",PROJECT.market],["EPD type",PROJECT.epdType],["Standards",PROJECT.standards],["Compiler",PROJECT.compiler]]
+    .filter(([,v]) => v);
   $("#projchips").innerHTML = c.map(([k,v]) => `<span class="pchip" title="${esc(k)}: ${esc(v)}"><i>${esc(k)}</i><b>${esc(v)}</b></span>`).join("");
 }
 
@@ -1237,7 +1088,7 @@ function renderReq(){
         <dt>Categories</dt><dd><div class="cats">${(r.categories||[]).map(c=>`<span class="cat">${esc(c)}</span>`).join("")||"—"}</div></dd>
         <dt>EPD section</dt><dd>${esc(r.epdSection||"—")}</dd>
         <dt>Applicability</dt><dd>${esc(r.applicability||"Applies unconditionally")}</dd>
-        <dt>Scope</dt><dd>${esc(PROJECT.category)} · ${esc(PROJECT.market)}</dd>
+        ${(PROJECT.category||PROJECT.market) ? `<dt>Scope</dt><dd>${[PROJECT.category,PROJECT.market].filter(Boolean).map(esc).join(" · ")}</dd>` : ""}
         <dt>Confidence</dt><dd><span class="conf"><span class="confbar"><i class="${r.confidence<0.6?"low":""}" style="width:${Math.round((r.confidence||0)*100)}%"></i></span>
           <span style="font-family:var(--mono);font-size:11px">${(r.confidence||0).toFixed(2)}</span>
           ${r.confidence<0.6?`<span style="color:var(--warn);font-size:11px">low — review closely</span>`:""}</span></dd>
@@ -1534,10 +1385,12 @@ const CATLIST = CATEGORIES.join(", ");
 const COMPLIST = Object.keys(COMPONENTS).join(", ");
 
 function buildPrompt(doc, chunk){
+  const ctxParts = [PROJECT.category && `category ${PROJECT.category}`, PROJECT.market && `market ${PROJECT.market}`,
+    PROJECT.epdType, PROJECT.standards && `standards ${PROJECT.standards}`].filter(Boolean);
+  const ctxLine = ctxParts.length ? `\nPROJECT CONTEXT: ${ctxParts.join("; ")}.\n` : "\n";
   return `You are extracting EPD-relevant requirements from a programme document for review by a life-cycle assessment expert. This is compliance work: recall matters more than precision. It is better to surface a borderline passage for a human to dismiss than to omit a mandatory requirement.
 
-DOCUMENT: ${doc.title} — ${doc.kind}, version ${doc.version}, published by ${doc.publisher}.
-PROJECT CONTEXT: ${PROJECT.category}; market ${PROJECT.market}; ${PROJECT.epdType}; standards ${PROJECT.standards}.
+DOCUMENT: ${doc.title} — ${doc.kind}, version ${doc.version}, published by ${doc.publisher}.${ctxLine}
 
 The document text follows between the markers. Page breaks are marked [[page N]].
 ---BEGIN---
@@ -2025,7 +1878,6 @@ $("#btnSettings").addEventListener("click", openSettings);
 function openAddDialog(){ $("#log").innerHTML=""; $("#prog").hidden=true; dlgAdd().showModal(); }
 $("#btnAdd").addEventListener("click", openAddDialog);
 $("#btnAddEmpty").addEventListener("click", openAddDialog);
-$("#btnLoadDemo").addEventListener("click", loadDemoWorkspace);
 $("#btnExpCsv").addEventListener("click", () => download("requirements-register.csv", toCsv(exportRows()), "text/csv"));
 $("#btnExpJson").addEventListener("click", () => download("compiler-implementation-spec.json", JSON.stringify(backupJson(), null, 2), "application/json"));
 
