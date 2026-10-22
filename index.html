@@ -493,6 +493,7 @@ dialog::backdrop{background:rgba(10,20,18,.5); backdrop-filter:blur(2px)}
         </select></div>
       <div class="fieldrow"><label for="mVer">Version</label><input id="mVer" type="text" placeholder="1.0.0"></div>
       <div class="fieldrow"><label for="mPub">Publisher / programme operator</label><input id="mPub" type="text" placeholder="EPD International AB"></div>
+      <div class="fieldrow"><label for="mDate">Document date</label><input id="mDate" type="date"></div>
     </div>
     <div id="panePdf">
       <div class="drop" id="drop" tabindex="0" role="button">
@@ -1478,6 +1479,80 @@ let abortCtl = null, ingestMode = "pdf";
 
 function logLine(s){ const l = $("#log"); const d = document.createElement("div"); d.textContent = s; l.appendChild(d); l.scrollTop = l.scrollHeight; }
 
+/* ============================ auto-fill document metadata ============================ */
+/* Runs the moment a PDF is picked, entirely locally (no network, no team code): reads the
+   PDF's embedded Info dictionary and skims page 1 for a title (largest text near the top),
+   a version string, a publisher/copyright line, and guesses a document type from keywords.
+   Every field it fills stays a normal editable input — this only saves typing, it never
+   locks anything, and it never overwrites a field the person already typed into. */
+
+function parsePdfDate(d){
+  // PDF date strings look like "D:20250227181757+01'00'"
+  const m = /^D:(\d{4})(\d{2})(\d{2})/.exec(d || "");
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+async function peekPdfMeta(file){
+  if (typeof pdfjsLib === "undefined") return null;
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    let info = {};
+    try { ({info} = await pdf.getMetadata()); } catch(e){}
+
+    const p1 = await pdf.getPage(1);
+    const tc = await p1.getTextContent();
+    // Largest-font run of items near the top of page 1 = likely title.
+    let best = null;
+    tc.items.slice(0, 60).forEach(it => {
+      const size = Math.abs(it.transform[3] || it.transform[0] || 0);
+      const s = (it.str || "").trim();
+      if (!s || s.length < 4) return;
+      if (!best || size > best.size) best = {size, parts:[s]};
+      else if (best && Math.abs(size - best.size) < 0.5) best.parts.push(s);
+    });
+    const titleGuess = best ? best.parts.join(" ").replace(/\s+/g," ").trim().slice(0,140) : "";
+
+    const pageText = tc.items.map(it => it.str).join(" ").replace(/\s+/g," ");
+    const firstTwoPages = pageText + " " + (await (async () => {
+      if (pdf.numPages < 2) return "";
+      try { const p2 = await pdf.getPage(2); const tc2 = await p2.getTextContent(); return tc2.items.map(it=>it.str).join(" "); } catch(e){ return ""; }
+    })());
+
+    const verM = /\bversion\s*:?\s*([0-9]+(?:\.[0-9]+){1,3})\b/i.exec(firstTwoPages) || /\bv\.?\s*([0-9]+(?:\.[0-9]+){1,3})\b/i.exec(firstTwoPages);
+    const copyM = /(?:©|\(c\)|copyright)\s*(?:20\d{2}\s*)?([A-Z][A-Za-z0-9 .,&/\-]{2,60}?(?:\bAB\b|\bLtd\b|\bGmbH\b|\bInc\.?\b|\bLLC\b|\bS\.A\.?\b)?)(?=[.\n]|$)/i.exec(firstTwoPages);
+    const pubM = copyM || /\b([A-Z][A-Za-z0-9 .,&/\-]{2,55}\b(?:AB|Ltd|GmbH|Inc\.?|LLC|S\.A\.?))\b/.exec(firstTwoPages);
+    const pubClean = pubM ? pubM[1].trim().replace(/\s+\d[\d\s]*$/, "").trim() : "";
+
+    let type = "";
+    if (/general programme instructions/i.test(firstTwoPages)) type = "General Programme Instructions";
+    else if (/\bc-pcr\b|complementary pcr/i.test(firstTwoPages)) type = "Complementary PCR";
+    else if (/\bpcr\b|product category rules/i.test(firstTwoPages)) type = "PCR";
+    else if (/verification (guideline|protocol)/i.test(firstTwoPages)) type = "Verification guideline";
+
+    return {
+      title: (info.Title && info.Title.trim()) || titleGuess || "",
+      version: verM ? verM[1] : "",
+      publisher: pubClean,
+      date: parsePdfDate(info.CreationDate) || "",
+      type
+    };
+  } catch(e){ return null; }
+}
+
+function applyPdfMetaGuess(meta){
+  if (!meta) return;
+  const setIfEmpty = (id, val) => { const el = $(id); if (el && val && !el.value.trim()) el.value = val; };
+  setIfEmpty("#mTitle", meta.title);
+  setIfEmpty("#mVer", meta.version);
+  setIfEmpty("#mPub", meta.publisher);
+  setIfEmpty("#mDate", meta.date);
+  if (meta.type && $("#mType") && !$("#mType").dataset.touched){
+    const opt = [...$("#mType").options].find(o => o.value === meta.type);
+    if (opt) $("#mType").value = meta.type;
+  }
+}
+
 async function readPdf(file){
   logLine("Reading " + file.name + " …");
   if (typeof pdfjsLib === "undefined") throw new Error("The PDF reader did not load. Check your connection, or use the paste tab instead.");
@@ -1591,7 +1666,7 @@ async function addDocument(){
   const docId = "up" + Date.now().toString(36);
   const doc = {id:docId, tier:5, kind:$("#mType").value, title,
     version:$("#mVer").value.trim() || "—", publisher:$("#mPub").value.trim() || "—",
-    date:new Date().toISOString().slice(0,10), lang:"en", status:"Uploaded for analysis",
+    date:$("#mDate").value || new Date().toISOString().slice(0,10), lang:"en", status:"Uploaded for analysis",
     file: ingestMode==="pdf" ? ($("#file").files[0]||{}).name : "pasted text",
     demo:false, warnings:src.empties, blocks:src.pages.map(p => ({page:p.n, clause:null, heading:"Page "+p.n, text:p.text}))};
 
@@ -2029,7 +2104,12 @@ $("#btnPrevHl").addEventListener("click", () => { const v = visible(); if (!v.le
 $("#btnAudit").addEventListener("click", openAudit);
 $("#btnExport").addEventListener("click", openExport);
 $("#btnSettings").addEventListener("click", openSettings);
-function openAddDialog(){ $("#log").innerHTML=""; $("#prog").hidden=true; dlgAdd().showModal(); }
+function openAddDialog(){
+  $("#log").innerHTML=""; $("#prog").hidden=true;
+  $("#mTitle").value=""; $("#mVer").value=""; $("#mPub").value=""; $("#mDate").value=""; $("#mType").selectedIndex=0;
+  delete $("#mType").dataset.touched;
+  dlgAdd().showModal();
+}
 $("#btnAdd").addEventListener("click", openAddDialog);
 $("#btnAddEmpty").addEventListener("click", openAddDialog);
 $("#btnExpCsv").addEventListener("click", () => download("requirements-register.csv", toCsv(exportRows()), "text/csv"));
@@ -2065,8 +2145,11 @@ $("#drop").addEventListener("drop", e => {
 });
 $("#file").addEventListener("change", () => {
   const f = $("#file").files[0];
-  if (f) $("#drop").innerHTML = `<b>${esc(f.name)}</b><br><span class="mini">${(f.size/1048576).toFixed(1)} MB — ready to analyse</span>`;
+  if (!f) return;
+  $("#drop").innerHTML = `<b>${esc(f.name)}</b><br><span class="mini">${(f.size/1048576).toFixed(1)} MB — ready to analyse</span>`;
+  peekPdfMeta(f).then(applyPdfMetaGuess);
 });
+$("#mType").addEventListener("change", () => { $("#mType").dataset.touched = "1"; });
 $("#btnRun").addEventListener("click", addDocument);
 $("#btnDeepScan").addEventListener("click", openDeepScanDialog);
 $("#btnScanRun").addEventListener("click", () => aiDeepScan(state.activeDoc));
