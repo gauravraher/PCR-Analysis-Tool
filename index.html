@@ -1585,40 +1585,108 @@ function parsePasted(text){
 
 /* ============================ local rule-based extraction ============================ */
 /* Runs entirely in the browser, no network, no team code. Finds obligation-bearing sentences
-   by keyword and attaches the nearest ALL-CAPS "N.N HEADING" clause number it can find before
-   them — the same drafting convention EPD/PCR/ISO documents actually use. When it can't find
-   one, clause stays null rather than guessing (never invent a clause number). Every quote
+   by keyword and attaches the nearest preceding ALL-CAPS "N.N HEADING" clause number — the
+   same drafting convention EPD/PCR/ISO documents actually use. The nearest heading may sit on
+   an earlier page (a clause that runs over a page break); before the first heading in the
+   document, clause stays null rather than guessing (never invent a clause number). Every quote
    returned here is a literal substring of the page text it came from, so it is always
    quoteVerified — there is no approximate-match case for this path. */
 
+// pdf.js often splits a word where the PDF changes glyph spacing ("sh ould", "shal l"), so
+// keywords of four letters or more tolerate one stray space between any two letters.
+function ruleKw(words){
+  const alt = words.map(w => w.split(" ").map(t => t.length >= 4 ? t.split("").join(" ?") : t).join("\\s+"));
+  return new RegExp("\\b(?:" + alt.join("|") + ")\\b", "i");
+}
 const RULE_OBLIGATION_PATTERNS = [
-  { re: /\b(shall not|must not|is not permitted to|is prohibited from)\b/i, obligation: "prohibited" },
-  { re: /\b(shall|must|is required to|is obliged to)\b/i, obligation: "mandatory" },
-  { re: /\bshould\b/i, obligation: "recommended" },
-  { re: /\bmay\b/i, obligation: "optional" }
+  { re: ruleKw(["shall not","must not","in no case shall","shall in no case","is not permitted","are not permitted",
+      "is not allowed","are not allowed","is prohibited","are prohibited","cannot be used"]), obligation: "prohibited" },
+  { re: ruleKw(["shall","must","is required","are required","is mandatory","are mandatory","is obliged to",
+      "is to be","are to be"]), obligation: "mandatory" },
+  { re: ruleKw(["should","is recommended","are recommended"]), obligation: "recommended" },
+  { re: ruleKw(["may","is optional","optionally","is acceptable","are acceptable"]), obligation: "optional" }
 ];
-const RULE_HEADER_RE = /(\d{1,2}(?:\.\d{1,2}){0,3})\s+([A-Z][A-Z0-9 \-\/,&()]{3,80}?)(?=\s[A-Z][a-z]|\s\d|$)/g;
+// "can" only counts as an option when the document itself says so ("The terms “may” or “can”
+// are used to indicate an option") — otherwise it is ordinary prose.
+const RULE_CAN = { re: /\bcan\b/i, obligation: "optional" };
+const RULE_CAN_DEFINED_RE = /\bcan[”"’']?\s+(?:is|are)\s+used\s+to\s+indicate/i;
+// A clause number can't directly follow a letter, digit, "." , ":" or "/" — that keeps
+// "A1", "2019:14" and "25745-2:2015" from being read as clause numbers.
+const RULE_HEADER_RE = /(?<![\w.:\/])(\d{1,2}(?:\.\d{1,2}){0,3})\s+([A-Z][A-Z0-9 \-\/,&():]{3,120}?)(?=\s[A-Z]+[a-z]|\s\d|$)/g;
+const RULE_BULLET_RE = /\s*[▪•○◦■●]\s*/;
+const RULE_SENTENCE_RE = /(?<=\.)\s+(?=[A-Z(])|(?<=;)\s+/;
+const RULE_CONDITIONAL_RE = /^(?:if|in (?:the )?cases?|where|when|unless)\b/i;
+const RULE_MAX_QUOTE = 400;
+
+// The same header text printed at the top of most pages (title, date, copyright, "PAGE n / N").
+// Returns its length on each page so the scan skips it: headers must not become clause
+// numbers or leak into quotes.
+function ruleRunningHeader(pages){
+  const lcp = (a, b) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return a.slice(0, i); };
+  const counts = new Map();
+  for (let i = 1; i < pages.length; i++){
+    let c = lcp(pages[i-1].text.slice(0, 400), pages[i].text.slice(0, 400));
+    c = c.slice(0, c.lastIndexOf(" ") + 1);
+    if (c.length >= 25) counts.set(c, (counts.get(c) || 0) + 1);
+  }
+  let best = "", bestN = 0;
+  counts.forEach((n, c) => { if (n > bestN){ best = c; bestN = n; } });
+  if (!best || pages.filter(p => p.text.startsWith(best)).length < pages.length / 2) return () => 0;
+  return text => {
+    if (!text.startsWith(best)) return 0;
+    const pg = text.slice(best.length).match(/^\s*(?:PAGE\s+)?\d+\s*(?:\/|of)\s*\d+\s*/i);
+    return best.length + (pg ? pg[0].length : 0);
+  };
+}
+
+function ruleMatch(s, canIsOption){
+  const t = s.replace(/[“"‘'][^”"’']{1,12}[”"’']/g, " ");   // ignore keywords quoted as terms: the term “shall”
+  const rule = RULE_OBLIGATION_PATTERNS.find(r => r.re.test(t)) || (canIsOption && RULE_CAN.re.test(t) ? RULE_CAN : null);
+  if (!rule) return null;
+  let obligation = rule.obligation;
+  if (obligation === "mandatory" && RULE_CONDITIONAL_RE.test(s)) obligation = "conditional";
+  return { obligation, idx: t.search(rule.re) };
+}
+
+// Keeps a literal window of a very long passage (formula blocks, run-on lists) around the
+// keyword instead of dropping it, cut at word boundaries.
+function ruleClip(s, idx){
+  if (s.length <= RULE_MAX_QUOTE) return s;
+  let a = Math.max(0, idx - RULE_MAX_QUOTE / 2), b = Math.min(s.length, a + RULE_MAX_QUOTE);
+  a = Math.max(0, b - RULE_MAX_QUOTE);
+  if (a > 0){ const sp = s.indexOf(" ", a); if (sp > 0 && sp < idx) a = sp + 1; }
+  if (b < s.length){ const sp = s.lastIndexOf(" ", b); if (sp > idx) b = sp; }
+  return s.slice(a, b).trim();
+}
 
 function ruleBasedExtract(pages){
   const results = [];
+  const headerLen = ruleRunningHeader(pages);
+  const canIsOption = pages.some(p => RULE_CAN_DEFINED_RE.test(p.text));
+  let clause = null;   // nearest heading so far, carried across page breaks
   pages.forEach(p => {
-    const text = p.text;
-    const headers = [...text.matchAll(RULE_HEADER_RE)].map(m => ({clause:m[1], idx:m.index, end:m.index+m[0].length}));
+    const text = p.text, from = headerLen(text);
+    const headers = [...text.slice(from).matchAll(RULE_HEADER_RE)].map(m => ({clause:m[1], idx:from+m.index, end:from+m.index+m[0].length}));
     const zones = [];
-    if (headers.length){
-      headers.forEach((h,i) => zones.push({clause:h.clause, start:h.end, end: i+1<headers.length ? headers[i+1].idx : text.length}));
-      if (headers[0].idx > 0) zones.unshift({clause:null, start:0, end:headers[0].idx});
-    } else {
-      zones.push({clause:null, start:0, end:text.length});
-    }
+    if (!headers.length || headers[0].idx > from) zones.push({clause, start:from, end: headers.length ? headers[0].idx : text.length});
+    headers.forEach((h,i) => zones.push({clause:h.clause, start:h.end, end: i+1<headers.length ? headers[i+1].idx : text.length}));
+    if (headers.length) clause = headers[headers.length-1].clause;
     zones.forEach(z => {
-      const chunk = text.slice(z.start, z.end);
-      chunk.split(/(?<=[.;])\s+(?=[A-Z(])/).forEach(raw => {
-        const s = raw.trim();
-        if (s.length < 30 || s.length > 320) return;
-        const rule = RULE_OBLIGATION_PATTERNS.find(r => r.re.test(s));
-        if (!rule) return;
-        results.push({ quote:s, page:p.n, clause:z.clause, obligation:rule.obligation });
+      // Bullets split a list into items. An item with no keyword of its own inherits the
+      // obligation of a lead-in that ends with ":" ("the EPD shall include the following:").
+      let lead = null;
+      text.slice(z.start, z.end).split(RULE_BULLET_RE).forEach((piece, pi) => {
+        piece.split(RULE_SENTENCE_RE).forEach((raw, si) => {
+          const s = raw.trim();
+          const isItem = pi > 0 && si === 0;
+          // A new sentence ends the list; a ";" continuation inside an item ("…frames); in kg") doesn't.
+          if (!isItem && !(si > 0 && /^[a-z]/.test(s))) lead = null;
+          if (!s) return;
+          const m = ruleMatch(s, canIsOption);
+          if (m && s.length >= 30) results.push({ quote:ruleClip(s, m.idx), page:p.n, clause:z.clause, obligation:m.obligation });
+          else if (!m && isItem && lead && s.length >= 3) results.push({ quote:ruleClip(s, 0), page:p.n, clause:z.clause, obligation:lead.obligation, lead:lead.quote });
+          if (m && /:$/.test(s)) lead = { obligation:m.obligation, quote:ruleClip(s, m.idx) };
+        });
       });
     });
   });
@@ -1678,7 +1746,9 @@ async function addDocument(){
       id: "R-" + String(i+1).padStart(3,"0") + "-" + docId.slice(-4),
       doc:docId, clause:item.clause, page:item.page, blockIndex: bi>=0?bi:null, quote:item.quote,
       obligation:item.obligation, categories:[], epdSection:"", applicability:null,
-      interpretation:"", rationale:`Contains an obligation keyword consistent with "${OBLIGATIONS[item.obligation].label.toLowerCase()}".`,
+      interpretation:"", rationale: item.lead
+        ? `List item under "${item.lead}".`
+        : `Contains an obligation keyword consistent with "${OBLIGATIONS[item.obligation].label.toLowerCase()}".`,
       confidence:0.5, related:[], source:"rule", aiReviewed:false, extractedAt: nowISO(),
       quoteVerified: bi>=0, approxMatch:false, needsExpert:false, compiler:null
     };
