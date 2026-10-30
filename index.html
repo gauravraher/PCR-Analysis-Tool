@@ -638,7 +638,7 @@ const PROJECT = {
 
 const state = {
   reqs: [], docs: [], activeDoc: null, selected: null,
-  obligationFilter: new Set(), savedView: "all", query: "",
+  obligationFilter: new Set(), savedView: "all", query: "", showAdmin: false,
   reviews: {},
   gh: {owner:"", repo:"", token:""}, teamCode:"", model:"claude-sonnet-5",
   ghShas: {}, connected:false, connecting:false, connError:"", dirty:new Set(), lastSync:null,
@@ -910,12 +910,14 @@ function renderDocTabs(){
 
 function renderFilters(){
   const counts = {};
-  visibleBase().forEach(r => { const o = effObligation(r); counts[o] = (counts[o]||0)+1; });
+  const base = visibleBase(), admin = base.filter(r => r.scope === "admin").length;
+  base.filter(r => state.showAdmin || r.scope !== "admin").forEach(r => { const o = effObligation(r); counts[o] = (counts[o]||0)+1; });
+  const adminChip = admin ? `<button class="fchip" data-admin="1" aria-pressed="${state.showAdmin}" title="Passages about running the PCR programme (moderator, review, consultation, validity, version history) rather than EPD content. Hidden unless pressed.">Programme admin<span class="n">${admin}</span></button>` : "";
   $("#filters").innerHTML = Object.entries(OBLIGATIONS)
     .sort((a,b)=>a[1].order-b[1].order)
     .filter(([k]) => counts[k])
     .map(([k,v]) => `<button class="fchip" data-ob="${k}" aria-pressed="${state.obligationFilter.has(k)}" title="${esc(v.label)}">
-      <span class="tok ${k}" aria-hidden="true">${v.tok}</span>${esc(v.label)}<span class="n">${counts[k]}</span></button>`).join("");
+      <span class="tok ${k}" aria-hidden="true">${v.tok}</span>${esc(v.label)}<span class="n">${counts[k]}</span></button>`).join("") + adminChip;
 }
 
 function renderConn(){
@@ -955,6 +957,7 @@ function renderStrip(){
 function visibleBase(){ return state.reqs.filter(r => r.doc === state.activeDoc); }
 
 function passes(r){
+  if (r.scope === "admin" && !state.showAdmin) return false;
   if (state.obligationFilter.size && !state.obligationFilter.has(effObligation(r))) return false;
   const v = state.savedView, st = statusOf(r);
   if (v === "unreviewed" && st !== "proposed") return false;
@@ -1613,6 +1616,15 @@ const RULE_CAN_DEFINED_RE = /\bcan[”"’']?\s+(?:is|are)\s+used\s+to\s+indicat
 // A clause number can't directly follow a letter, digit, "." , ":" or "/" — that keeps
 // "A1", "2019:14" and "25745-2:2015" from being read as clause numbers.
 const RULE_HEADER_RE = /(?<![\w.:\/])(\d{1,2}(?:\.\d{1,2}){0,3})\s+([A-Z][A-Z0-9 \-\/,&():]{3,120}?)(?=\s[A-Z]+[a-z]|\s\d|$)/g;
+// Deep subheadings are often set in sentence case ("4.3.1.1 Information requirements for
+// component manufacturers The …"). Only three or more levels count, and not after "Section",
+// "Table" etc., so footnote markers and cross-references aren't mistaken for headings.
+const RULE_SUBHEADER_RE = /(?<![\w.:\/])(?<!(?:Section|section|Clause|clause|Table|table|Annex|Figure|see|and|to|of|in|per)\s)(\d{1,2}(?:\.\d{1,2}){2,3})\s+([A-Z][a-z]+(?:\s[a-z][a-z\-]*){1,12})(?=\s[A-Z])/g;
+// Passages about running the PCR programme rather than about what goes in an EPD: who
+// moderates or reviews it, consultation, validity, version history. Hidden by default.
+const RULE_ADMIN_ACTOR_RE = /\b(?:PCR Moderator|Secretariat|review panel|Technical Committee|PCR Committee|open consultation|comments? on this|be acknowledged)\b/i;
+const RULE_ADMIN_HEADING_RE = /\b(?:ADMINISTRATIVE INFORMATION|PCR REVIEW|OPEN CONSULTATION|BACKGROUND INFORMATION|EXISTING PCRS|REASONING FOR DEVELOPMENT|UNDERLYING STUDIES|VERSION HISTORY|REFERENCES|ABBREVIATIONS)\b/i;
+const RULE_EPD_RE = /\b(?:EPDs?\b(?!\s+(?:International|System|®))|LCA\b|modules?\b)/;
 const RULE_BULLET_RE = /\s*[▪•○◦■●]\s*/;
 const RULE_SENTENCE_RE = /(?<=\.)\s+(?=[A-Z(])|(?<=;)\s+/;
 const RULE_CONDITIONAL_RE = /^(?:if|in (?:the )?cases?|where|when|unless)\b/i;
@@ -1659,18 +1671,27 @@ function ruleClip(s, idx){
   return s.slice(a, b).trim();
 }
 
+function ruleScope(quote, heading){
+  if (RULE_ADMIN_ACTOR_RE.test(quote)) return "admin";
+  if (heading && RULE_ADMIN_HEADING_RE.test(heading) && !RULE_EPD_RE.test(quote)) return "admin";
+  return "epd";
+}
+
 function ruleBasedExtract(pages){
   const results = [];
   const headerLen = ruleRunningHeader(pages);
   const canIsOption = pages.some(p => RULE_CAN_DEFINED_RE.test(p.text));
-  let clause = null;   // nearest heading so far, carried across page breaks
+  let clause = null, heading = null;   // nearest heading so far, carried across page breaks
   pages.forEach(p => {
-    const text = p.text, from = headerLen(text);
-    const headers = [...text.slice(from).matchAll(RULE_HEADER_RE)].map(m => ({clause:m[1], idx:from+m.index, end:from+m.index+m[0].length}));
+    const text = p.text, from = headerLen(text), body = text.slice(from);
+    const headers = [...body.matchAll(RULE_HEADER_RE), ...body.matchAll(RULE_SUBHEADER_RE)]
+      .map(m => ({clause:m[1], heading:m[2], idx:from+m.index, end:from+m.index+m[0].length}))
+      .sort((a,b) => a.idx - b.idx)
+      .filter((h,i,arr) => i === 0 || h.idx >= arr[i-1].end);
     const zones = [];
-    if (!headers.length || headers[0].idx > from) zones.push({clause, start:from, end: headers.length ? headers[0].idx : text.length});
-    headers.forEach((h,i) => zones.push({clause:h.clause, start:h.end, end: i+1<headers.length ? headers[i+1].idx : text.length}));
-    if (headers.length) clause = headers[headers.length-1].clause;
+    if (!headers.length || headers[0].idx > from) zones.push({clause, heading, start:from, end: headers.length ? headers[0].idx : text.length});
+    headers.forEach((h,i) => zones.push({clause:h.clause, heading:h.heading, start:h.end, end: i+1<headers.length ? headers[i+1].idx : text.length}));
+    if (headers.length){ clause = headers[headers.length-1].clause; heading = headers[headers.length-1].heading; }
     zones.forEach(z => {
       // Bullets split a list into items. An item with no keyword of its own inherits the
       // obligation of a lead-in that ends with ":" ("the EPD shall include the following:").
@@ -1683,9 +1704,9 @@ function ruleBasedExtract(pages){
           if (!isItem && !(si > 0 && /^[a-z]/.test(s))) lead = null;
           if (!s) return;
           const m = ruleMatch(s, canIsOption);
-          if (m && s.length >= 30) results.push({ quote:ruleClip(s, m.idx), page:p.n, clause:z.clause, obligation:m.obligation });
-          else if (!m && isItem && lead && s.length >= 3) results.push({ quote:ruleClip(s, 0), page:p.n, clause:z.clause, obligation:lead.obligation, lead:lead.quote });
-          if (m && /:$/.test(s)) lead = { obligation:m.obligation, quote:ruleClip(s, m.idx) };
+          if (m && s.length >= 30){ const q = ruleClip(s, m.idx); results.push({ quote:q, page:p.n, clause:z.clause, obligation:m.obligation, scope:ruleScope(q, z.heading) }); }
+          else if (!m && isItem && lead && s.length >= 3){ const q = ruleClip(s, 0); results.push({ quote:q, page:p.n, clause:z.clause, obligation:lead.obligation, lead:lead.quote, scope:lead.scope }); }
+          if (m && /:$/.test(s)){ const q = ruleClip(s, m.idx); lead = { obligation:m.obligation, quote:q, scope:ruleScope(q, z.heading) }; }
         });
       });
     });
@@ -1749,7 +1770,7 @@ async function addDocument(){
       interpretation:"", rationale: item.lead
         ? `List item under "${item.lead}".`
         : `Contains an obligation keyword consistent with "${OBLIGATIONS[item.obligation].label.toLowerCase()}".`,
-      confidence:0.5, related:[], source:"rule", aiReviewed:false, extractedAt: nowISO(),
+      scope:item.scope, confidence:0.5, related:[], source:"rule", aiReviewed:false, extractedAt: nowISO(),
       quoteVerified: bi>=0, approxMatch:false, needsExpert:false, compiler:null
     };
   });
@@ -1758,7 +1779,9 @@ async function addDocument(){
 
   state.docs.push(doc);
   found.forEach(f => state.reqs.push(f));
-  state.activeDoc = docId; if (found.length) state.selected = found[0].id;
+  state.activeDoc = docId;
+  const firstShown = found.find(f => f.scope !== "admin") || found[0];
+  if (firstShown) state.selected = firstShown.id;
   scheduleSync(docId);
   renderAll();
   setTimeout(() => dlgAdd().close(), 900);
@@ -1922,7 +1945,7 @@ function exportRows(){
       requirementId: r.id, sourceDocument: d.title, documentType: d.kind, documentVersion: d.version,
       publisher: d.publisher, hierarchyLevel: d.tier, clause: r.clause || "", page: r.page,
       sourceExtract: r.quote, quoteVerifiedAgainstSource: !!r.quoteVerified, locationApproximate: !!r.approxMatch,
-      obligationLevel: effObligation(r), categories: (r.categories||[]).join("; "),
+      obligationLevel: effObligation(r), scope: r.scope === "admin" ? "programme-admin" : "epd-content", categories: (r.categories||[]).join("; "),
       epdSection: r.epdSection || "", applicability: r.applicability || "",
       interpretation: effInterp(r), interpretationSource: rv.interpretation ? "reviewer-edited" : "AI-proposed",
       confidence: r.confidence, reviewStatus: statusOf(r), reviewedBy: rv.by || "", reviewedAt: rv.at || "",
@@ -2140,6 +2163,7 @@ document.addEventListener("click", e => {
   const tab = closest(".doctab");
   if (tab){ state.activeDoc = tab.dataset.doc; const f = visible()[0]; if (f) state.selected = f.id; renderAll(); return; }
   const fc = closest(".fchip");
+  if (fc && fc.dataset.admin){ state.showAdmin = !state.showAdmin; const f = visible()[0]; if (f && !visible().some(r => r.id === state.selected)) state.selected = f.id; renderAll(); return; }
   if (fc){ const k = fc.dataset.ob; state.obligationFilter.has(k) ? state.obligationFilter.delete(k) : state.obligationFilter.add(k); renderAll(); return; }
   const hl = closest("[data-req]");
   if (hl){ select(hl.dataset.req); return; }

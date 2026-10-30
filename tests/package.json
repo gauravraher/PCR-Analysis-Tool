@@ -1,0 +1,12 @@
+{
+  "name": "pcr-tool-tests",
+  "private": true,
+  "description": "Regression tests for the local keyword scan in ../index.html",
+  "scripts": {
+    "test": "node scan-unit.js",
+    "regression": "node scan-regression.js"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "3.11.174"
+  }
+}
